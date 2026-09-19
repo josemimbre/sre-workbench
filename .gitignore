@@ -1,0 +1,9 @@
+# Binaries built locally
+services/checkout-api/checkout-api
+services/catalog-api/catalog-api
+services/payments-worker/payments-worker
+/bin/
+
+# Scenario and game day output
+scenarios/out/
+*.log
