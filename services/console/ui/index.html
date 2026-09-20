@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SRE Workbench Console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📉</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <div>
+      <h1>SRE Workbench</h1>
+      <p class="brand-sub">Break it on purpose, then read the budget.</p>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <label class="field-inline">
+      <span>Service</span>
+      <select id="service-select"></select>
+    </label>
+    <a id="link-grafana" class="btn btn-ghost" target="_blank" rel="noopener">Grafana</a>
+    <a id="link-prometheus" class="btn btn-ghost" target="_blank" rel="noopener">Prometheus</a>
+    <button id="clear-all" class="btn btn-warn">Clear all faults</button>
+  </div>
+</header>
+
+<main>
+  <section class="intro">
+    <p id="intro-text">
+      Everything on this page is a live PromQL query against the running workbench. Break the
+      service with a fault or a scenario below, then watch which numbers move — and, more
+      interestingly, which ones do not.
+    </p>
+    <div class="intro-meta">
+      <span class="pill" id="pill-status">connecting…</span>
+      <span class="pill pill-quiet" id="pill-slo"></span>
+      <span class="pill pill-quiet" id="pill-updated"></span>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Live signals</h2>
+      <p>The RED metrics and the two SLIs the error budget is built from. Last 30 minutes.</p>
+    </div>
+    <div id="signals" class="card-grid"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Error budget</h2>
+      <p>How much failure is still affordable in the current 1-hour window, and how fast it is being spent.</p>
+    </div>
+    <div id="budgets" class="card-grid"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Inject a fault</h2>
+      <p>Every fault is scoped, probabilistic and time-boxed. It removes itself when its TTL runs out.</p>
+    </div>
+    <div id="faults" class="card-grid"></div>
+    <div class="danger-strip">
+      <div>
+        <strong>Crash the process</strong>
+        <p>No TTL, nothing to undo. The container restart policy brings it back with its counters reset — and the client-side line keeps going while the server's own metrics simply vanish.</p>
+      </div>
+      <button id="crash" class="btn btn-danger">Crash it</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Active faults</h2>
+      <p>What is currently wrong with the service, and when it stops.</p>
+    </div>
+    <div id="active-faults" class="active-faults"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Scenarios</h2>
+      <p>Scripted game days. The hypothesis is written before the run — read it, predict the outcome, then press the button.</p>
+    </div>
+    <div id="scenarios" class="card-grid card-grid-wide"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>How this works</h2>
+      <p>The reasoning behind every number above.</p>
+    </div>
+    <div id="topics" class="topics"></div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

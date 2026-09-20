@@ -14,6 +14,26 @@ services:
       - "8080:8080"
     restart: unless-stopped
 
+  console:
+    build:
+      context: ../../services
+      args:
+        SERVICE: console
+    environment:
+      PORT: "8090"
+      SERVICES: checkout-api=http://checkout-api:8080
+      PROMETHEUS_URL: http://prometheus:9090
+      # The links in the header are opened by your browser, not by the container, so
+      # they have to be the published ports rather than the compose network names.
+      PROMETHEUS_PUBLIC_URL: http://localhost:9090
+      GRAFANA_URL: http://localhost:3000/d/workbench-red
+    ports:
+      - "8090:8090"
+    depends_on:
+      - checkout-api
+      - prometheus
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v3.14.0
     command:

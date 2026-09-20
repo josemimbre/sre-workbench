@@ -1,4 +1,4 @@
-COMPOSE := docker compose -f deploy/compose/docker-compose.yml
+COMPOSE := docker compose -f deploy/compose/compose.yml
 
 .DEFAULT_GOAL := help
 
@@ -10,6 +10,7 @@ help: ## Show this help
 up: ## Start the whole environment (build included)
 	$(COMPOSE) up -d --build
 	@echo
+	@echo "  console       http://localhost:8090   <- start here"
 	@echo "  checkout-api  http://localhost:8080/checkout"
 	@echo "  prometheus    http://localhost:9090"
 	@echo "  grafana       http://localhost:3000/d/workbench-red"

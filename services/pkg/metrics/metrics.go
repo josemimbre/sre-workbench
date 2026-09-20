@@ -57,10 +57,24 @@ func NewWith(reg prometheus.Registerer, service, version string) *Metrics {
 	}
 }
 
-// Middleware wraps a handler with RED instrumentation. It must wrap a *http.ServeMux
-// (or anything that fills in Request.Pattern) so the route label stays bounded.
-func (m *Metrics) Middleware(next http.Handler) http.Handler {
+// Middleware wraps a handler with RED instrumentation.
+//
+// The route label is resolved from `routes` up front rather than read back from
+// Request.Pattern afterwards. That matters as soon as anything sits between this
+// middleware and the mux: a fault injector that short-circuits a request means the mux
+// never routes it, and the label would collapse to the catch-all pattern exactly during
+// an outage — losing the route dimension of the SLI when it is most needed.
+//
+// `next` is the rest of the chain, which normally ends at the same mux.
+func (m *Metrics) Middleware(routes *http.ServeMux, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Unmatched paths collapse into a single label value: the alternative is
+		// unbounded cardinality from random URLs.
+		_, route := routes.Handler(r)
+		if route == "" {
+			route = "unmatched"
+		}
+
 		start := time.Now()
 		m.inFlight.Inc()
 		defer m.inFlight.Dec()
@@ -68,13 +82,6 @@ func (m *Metrics) Middleware(next http.Handler) http.Handler {
 		rec := &recorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 
-		// ServeMux sets Request.Pattern while routing, so it is only readable once the
-		// inner handler has returned. Unmatched paths collapse into a single label
-		// value: the alternative is unbounded cardinality from random URLs.
-		route := r.Pattern
-		if route == "" {
-			route = "unmatched"
-		}
 		m.requests.WithLabelValues(route, r.Method, strconv.Itoa(rec.status)).Inc()
 		m.duration.WithLabelValues(route, r.Method).Observe(time.Since(start).Seconds())
 	})

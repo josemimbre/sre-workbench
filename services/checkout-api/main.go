@@ -1,7 +1,6 @@
 // checkout-api is the entry point of the workbench: a write endpoint whose SLIs are
-// availability and latency (PLAN.md §6.1 and §6.2). In phase 0 it has no dependencies
-// and no fault injection: it only serves traffic with a realistic, right-skewed latency
-// distribution so the RED dashboard has something to show.
+// availability and latency (PLAN.md §6.1 and §6.2). It has no dependencies yet; what it
+// does have is a fault engine, so the SLIs can be broken on demand and watched.
 package main
 
 import (
@@ -18,8 +17,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/josemimbre/sre-workbench/services/pkg/faults"
 	"github.com/josemimbre/sre-workbench/services/pkg/metrics"
 )
 
@@ -31,19 +32,25 @@ func main() {
 	baseLatency := time.Duration(envInt("BASE_LATENCY_MS", 40)) * time.Millisecond
 
 	m := metrics.New(serviceName, version)
+	engine := faults.New(prometheus.DefaultRegisterer)
 	api := &api{log: log, baseLatency: baseLatency}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /checkout", api.checkout)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
 
-	// /metrics is served outside the middleware: scraping itself is not user traffic
-	// and would otherwise pollute the SLI.
+	// Only user traffic goes through the middleware chain. /metrics, /healthz and the
+	// fault admin API stay outside it: scraping and control-plane calls are not user
+	// traffic, and the admin API has to keep working while the service is broken.
+	//
+	// The fault engine sits *inside* the metrics middleware so that injected latency
+	// and injected errors land in the SLI exactly as a user would experience them.
 	root := http.NewServeMux()
 	root.Handle("/metrics", promhttp.Handler())
-	root.Handle("/", m.Middleware(mux))
+	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	root.Handle("/admin/", engine.Handler())
+	root.Handle("/", m.Middleware(mux, engine.Middleware(mux)))
 
 	addr := ":" + env("PORT", "8080")
 	srv := &http.Server{

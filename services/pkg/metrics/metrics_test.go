@@ -21,7 +21,7 @@ func newTestHandler(t *testing.T) (http.Handler, *Metrics) {
 	mux.HandleFunc("GET /boom", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
-	return m.Middleware(mux), m
+	return m.Middleware(mux, mux), m
 }
 
 func do(t *testing.T, h http.Handler, method, path string) int {
@@ -87,4 +87,27 @@ func contains(s []float64, v float64) bool {
 		}
 	}
 	return false
+}
+
+// Regression: a fault injector short-circuits the request before the mux ever routes it.
+// The route label must still be the real route, otherwise a per-route SLI goes blank at
+// precisely the moment the service is broken.
+func TestRouteLabelSurvivesAShortCircuitingMiddleware(t *testing.T) {
+	m := NewWith(prometheus.NewRegistry(), "test-service", "v0")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /checkout", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Stands in for the fault engine: answers 500 without calling the mux at all.
+	breaker := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	do(t, m.Middleware(mux, breaker), http.MethodPost, "/checkout")
+
+	if got := testutil.ToFloat64(m.requests.WithLabelValues("POST /checkout", "POST", "500")); got != 1 {
+		t.Fatalf("expected the injected failure to keep its route label, got %v", got)
+	}
 }
