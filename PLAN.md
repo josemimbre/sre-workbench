@@ -56,7 +56,9 @@ Non-goals: real high availability, security, serious persistence, multi-tenancy.
         └─────────────┘   └─────────────────┘
 
   Everything exposes /metrics  ──►  Prometheus ──► Grafana
-                                         │
+                                         │   ▲
+                                         │   └── console ──► /admin/faults on every service
+                                         │                   (the page you actually use)
                                          └──────► Alertmanager ──► webhook (log)
 ```
 
@@ -104,8 +106,9 @@ the next run.
 | `poison` | `p` | Wrong results: breaks the correctness SLI while RED stays clean. |
 | `crash` | — | Restart; in the kind phase, CrashLoopBackOff. |
 
-`scenarios/` stores each experiment as a script that orchestrates injection, waiting and
-verification, so runs are repeatable and comparable.
+Experiments are defined once, in the console's catalog, and run from its UI or straight
+from its API. Keeping the definition in one place is what stops the written-down
+hypothesis and the thing that actually runs from drifting apart.
 
 ## 6. Initial SLIs and SLOs
 
@@ -175,7 +178,9 @@ budget burned in the window, current burn rate, and projected exhaustion time.
 
 ## 8. Scenarios (game days)
 
-Each one is a script in `scenarios/`, with its hypothesis written down **before** it runs.
+Each one is defined in the console, with its hypothesis written down **before** it runs.
+Phase 3 adds a headless runner (`make scenario-N`) that posts to the same API, so a game
+day is reproducible from a terminal without duplicating a single definition.
 
 | # | Scenario | Injection | What it teaches |
 |---|---|---|---|
@@ -199,7 +204,7 @@ Cross-cutting exercise: in every scenario, compare the server-side SLI against k
 | **0 — Skeleton** | Compose with Prometheus + Grafana and a minimal `checkout-api` exposing `/metrics`. | `make up` shows the RED dashboard with k6 traffic on it. |
 | **1 — Services and faults** | The three services, `pkg/faults`, the admin API, and a loadgen with a diurnal pattern. | Any fault from §5 can be injected with `curl` and seen in Grafana. |
 | **2 — SLIs/SLOs** | Sloth specs, recording rules, error budget dashboard. | A scenario shows the budget draining in real time. |
-| **3 — Alerting and game days** | Multi-window alerts, Alertmanager, runbooks, scenarios 1–9 scripted. | `make scenario-1` runs, alerts, and reports the budget consumed. |
+| **3 — Alerting and game days** | Multi-window alerts, Alertmanager, runbooks, and a headless runner for the console's scenarios. | `make scenario-1` runs, alerts, and reports the budget consumed. |
 | **4 — Kubernetes** | kind plus kube-prometheus-stack, the same services, scenario 10. | The same SLOs work on k8s without being rewritten. |
 | **5 — Extras (optional)** | OTel traces with Tempo, native histograms, Pyrra as an SLO UI. | — |
 
@@ -213,6 +218,7 @@ sre-workbench/
 │   ├── checkout-api/
 │   ├── catalog-api/
 │   ├── payments-worker/
+│   ├── console/              # control plane: SLI queries, scenarios, embedded UI
 │   └── pkg/
 │       ├── faults/           # injection engine + admin API
 │       ├── metrics/          # RED middleware, shared histograms
@@ -225,8 +231,7 @@ sre-workbench/
 │   ├── alertmanager/
 │   ├── grafana/dashboards/
 │   └── slo/                  # Sloth specs → generated rules
-├── loadgen/                  # k6 scripts
-└── scenarios/                # one script and one runbook per game day
+└── loadgen/                  # k6 scripts
 ```
 
 ## 11. Decisions already made
