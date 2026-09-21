@@ -18,6 +18,8 @@ const state = {
   values: {},
   faults: [],
   knownFaultIds: new Set(),
+  knownAlerts: new Set(),
+  links: {},
   clockOffset: 0,
   events: loadEvents(),
   view: null,
@@ -28,6 +30,7 @@ const $ = (sel) => document.querySelector(sel);
 const ctx = {
   get catalog() { return state.catalog; },
   get events() { return state.events; },
+  get links() { return state.links; },
   service: () => state.service,
   toast,
   log: logEvent,
@@ -102,6 +105,32 @@ async function refreshFaults() {
     state.faults = [];
     if (control) control.applyFaults([], state.clockOffset);
     $('#pill-faults').hidden = true;
+  }
+}
+
+async function refreshAlerts() {
+  try {
+    const data = await api.alerts();
+    const alerts = data.alerts || [];
+
+    // Only log an alert the first time it starts firing. Pending does not count: an
+    // alert that never makes it to firing is the multi-window scheme working.
+    const firing = new Set(alerts.filter((a) => a.state === 'firing').map((a) => `${a.name}/${a.severity}`));
+    for (const key of firing) {
+      if (!state.knownAlerts.has(key)) {
+        const [name, severity] = key.split('/');
+        logEvent('alert', `${severity} alert firing: ${name}`);
+      }
+    }
+    state.knownAlerts = firing;
+
+    if (control) control.applyAlerts(alerts, data.notifications || []);
+    const pill = $('#pill-alerts');
+    pill.hidden = alerts.length === 0;
+    pill.textContent = `${alerts.length} alert${alerts.length > 1 ? 's' : ''}`;
+    pill.dataset.state = alerts.some((a) => a.state === 'firing') ? 'firing' : 'pending';
+  } catch {
+    if (control) control.applyAlerts([], []);
   }
 }
 
@@ -181,6 +210,7 @@ async function boot() {
     if (control && state.view === 'control') control.refreshChart();
   });
 
+  state.links = data.links;
   $('#link-grafana').href = data.links.grafana;
   $('#link-prometheus').href = data.links.prometheus;
 
@@ -195,9 +225,11 @@ async function boot() {
 
   await refreshSummary();
   await refreshFaults();
+  await refreshAlerts();
 
   setInterval(refreshSummary, 2000);
   setInterval(refreshFaults, 3000);
+  setInterval(refreshAlerts, 4000);
   setInterval(() => { if (control && state.view === 'control') control.tick(); }, 1000);
   setInterval(() => { if (control && state.view === 'control') control.refreshChart(); }, 10000);
 }

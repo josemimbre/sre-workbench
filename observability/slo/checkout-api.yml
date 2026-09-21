@@ -1,0 +1,65 @@
+# SLO definitions for checkout-api, in Sloth's format. `make slo-gen` turns this into
+# recording rules and multi-window burn-rate alerts under observability/prometheus/rules/.
+#
+# The generated file is committed, so the workbench comes up without anyone having to run
+# a generator first. Regenerate it whenever this file or the window catalogue changes.
+version: prometheus/v1
+service: checkout-api
+labels:
+  workbench: playground
+
+slos:
+  # See PLAN.md §6.1. Bad events are 5xx; a 4xx is a correct answer to an invalid
+  # request and deliberately does not count.
+  - name: availability
+    objective: 99.0
+    description: >-
+      The proportion of checkout requests that do not fail with a server error,
+      over a rolling one-hour window.
+    sli:
+      events:
+        # `or vector(0)` is load-bearing. With no 5xx at all the selector matches
+        # nothing, the numerator is an empty vector, and empty divided by anything is
+        # empty — so a perfectly healthy service would record no SLI series at all, and
+        # its error budget would read "no data" instead of 100%.
+        error_query: (sum(rate(http_requests_total{job="checkout-api", code=~"5.."}[{{.window}}])) or vector(0))
+        total_query: sum(rate(http_requests_total{job="checkout-api"}[{{.window}}]))
+    alerting:
+      name: CheckoutAPIAvailability
+      labels:
+        sli: availability
+      annotations:
+        summary: checkout-api is burning its availability budget
+      page_alert:
+        labels:
+          severity: page
+      ticket_alert:
+        labels:
+          severity: ticket
+
+  # See PLAN.md §6.2. Bad events are requests slower than 300ms, counted as the total
+  # minus the le="0.3" bucket — a ratio of counts, never an estimated percentile.
+  - name: latency
+    objective: 95.0
+    description: >-
+      The proportion of checkout requests served in under 300ms, over a rolling
+      one-hour window.
+    sli:
+      events:
+        error_query: >-
+          sum(rate(http_request_duration_seconds_count{job="checkout-api"}[{{.window}}]))
+          -
+          sum(rate(http_request_duration_seconds_bucket{job="checkout-api", le="0.3"}[{{.window}}]))
+        total_query: sum(rate(http_request_duration_seconds_count{job="checkout-api"}[{{.window}}]))
+    alerting:
+      name: CheckoutAPILatency
+      labels:
+        sli: latency
+      annotations:
+        summary: checkout-api is burning its latency budget
+      page_alert:
+        labels:
+          severity: page
+      ticket_alert:
+        labels:
+          severity: ticket

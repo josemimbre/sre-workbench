@@ -1,0 +1,47 @@
+# Alert windows for the playground's compressed 1-hour SLO period.
+#
+# The SRE Workbook's catalogue (page at 14.4x over 1h, ticket at 1x over 3d) is
+# calibrated for a 30-day period. Scaled proportionally to one hour, its long windows
+# would land at 5 seconds — far below the 5s scrape interval, so they could never be
+# measured. Compressing an SLO period therefore has a floor, set by how often you scrape
+# and how much traffic you have.
+#
+# What is kept is the thing being taught: the burn rate thresholds, 14.4 / 6 / 3 / 1.
+# What gives way is budget efficiency. Sloth derives the burn rate from the window and
+# the error budget percentage:
+#
+#     burn rate = errorBudgetPercent/100 x (sloPeriod / longWindow)
+#
+#   page quick    48% x (60m /  2m) = 14.4
+#   page slow     50% x (60m /  5m) =  6
+#   ticket quick  75% x (60m / 15m) =  3
+#   ticket slow   50% x (60m / 30m) =  1
+#
+# Those budget percentages look alarming next to the Workbook's 2% and 5%, and they are
+# honest: an alert that waits two minutes before paging has, by then, let a large slice of
+# a one-hour budget burn. In exchange an experiment gives feedback in minutes instead of
+# days. That trade is the whole point of the playground period.
+apiVersion: sloth.slok.dev/v1
+kind: AlertWindows
+spec:
+  sloPeriod: 1h
+
+  page:
+    quick:
+      errorBudgetPercent: 48
+      shortWindow: 1m
+      longWindow: 2m
+    slow:
+      errorBudgetPercent: 50
+      shortWindow: 2m
+      longWindow: 5m
+
+  ticket:
+    quick:
+      errorBudgetPercent: 75
+      shortWindow: 5m
+      longWindow: 15m
+    slow:
+      errorBudgetPercent: 50
+      shortWindow: 10m
+      longWindow: 30m

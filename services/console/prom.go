@@ -30,8 +30,9 @@ type promResponse struct {
 	Data   struct {
 		ResultType string `json:"resultType"`
 		Result     []struct {
-			Value  []any   `json:"value"`
-			Values [][]any `json:"values"`
+			Metric map[string]string `json:"metric"`
+			Value  []any             `json:"value"`
+			Values [][]any           `json:"values"`
 		} `json:"result"`
 	} `json:"data"`
 }
@@ -50,6 +51,20 @@ func (c *promClient) instant(ctx context.Context, query string) (*float64, error
 		return nil, nil
 	}
 	return parseSample(body.Data.Result[0].Value[1]), nil
+}
+
+// instantSeries returns the label sets of every series a query matches. Alerts are read
+// this way: what matters about ALERTS is its labels, not its value, which is always 1.
+func (c *promClient) instantSeries(ctx context.Context, query string) ([]map[string]string, error) {
+	body, err := c.get(ctx, "/api/v1/query", url.Values{"query": {query}})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]string, 0, len(body.Data.Result))
+	for _, r := range body.Data.Result {
+		out = append(out, r.Metric)
+	}
+	return out, nil
 }
 
 // rangeQuery evaluates a query over a window, for the sparklines.

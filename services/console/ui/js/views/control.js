@@ -7,8 +7,8 @@ import { Chart } from '../chart.js';
 import { clone, list, mount } from '../dom.js';
 import { formatValue, statusOf, humanSeconds, clockTime } from '../format.js';
 
-const TILES = ['availability', 'latency', 'availability_budget', 'availability_burn_5m'];
-const CHARTABLE = ['availability', 'latency', 'availability_budget', 'availability_burn_5m', 'throughput', 'p99', 'inflight'];
+const TILES = ['availability', 'latency', 'availability_budget', 'availability_burn'];
+const CHARTABLE = ['availability', 'latency', 'availability_budget', 'availability_burn', 'latency_budget', 'latency_burn', 'throughput', 'p99', 'inflight'];
 const WINDOWS = [15, 30, 60];
 
 export class ControlView {
@@ -19,6 +19,8 @@ export class ControlView {
     this.faultType = ctx.catalog.faults[0].type;
     this.values = {};
     this.faults = [];
+    this.alerts = [];
+    this.notifications = [];
     this.clockOffset = 0;
     this.tiles = {};
     this.refs = {};
@@ -35,12 +37,15 @@ export class ControlView {
       '[data-slot="metrics"]': this.buildMetricChips(),
       '[data-slot="fault-types"]': this.buildFaultTypes(),
       '[data-slot="scenarios"]': this.buildScenarios(),
+      '[data-slot="am-link"]': { href: ctxLink(this.ctx, 'alertmanager') },
       '[data-slot="clear"]': { on: { click: () => this.clearFaults() } },
       '[data-slot="crash"]': { on: { click: () => this.crash() } },
     });
 
     this.refs = {
       banner: view.querySelector('[data-slot="banner"]'),
+      alertList: view.querySelector('[data-slot="alert-list"]'),
+      notifications: view.querySelector('[data-slot="notifications"]'),
       bannerText: view.querySelector('.banner-text'),
       chartHost: view.querySelector('[data-slot="chart"]'),
       chartWhy: view.querySelector('.chart-why'),
@@ -55,6 +60,7 @@ export class ControlView {
     this.chart = new Chart(this.refs.chartHost, { height: 280 });
 
     this.renderFaultForm();
+    this.renderAlerts();
     this.renderActiveFaults();
     this.renderEventLog();
     this.renderBanner();
@@ -178,6 +184,42 @@ export class ControlView {
     if (!this.root) return;
     this.renderActiveFaults();
     this.renderBanner();
+  }
+
+  applyAlerts(alerts, notifications) {
+    this.alerts = alerts || [];
+    this.notifications = notifications || [];
+    if (this.root) this.renderAlerts();
+  }
+
+  renderAlerts() {
+    const { alertList, notifications } = this.refs;
+    if (!alertList) return;
+
+    if (!this.alerts.length) {
+      mount(alertList, clone('tpl-empty', {
+        '': 'No alerts. Every window agrees the budget is being spent slower than 1×.',
+      }));
+    } else {
+      mount(alertList, list('tpl-alert', this.alerts, (a) => ({
+        '': { data: { state: a.state, severity: a.severity } },
+        '.alert-state': a.state,
+        '.alert-name': a.name,
+        '.alert-meta': [a.service, a.slo].filter(Boolean).join(' · '),
+        '.alert-severity': a.severity || '—',
+      })));
+    }
+
+    if (!notifications) return;
+    if (!this.notifications.length) {
+      mount(notifications, clone('tpl-empty', { '': 'Nothing delivered yet.' }));
+      return;
+    }
+    mount(notifications, list('tpl-notification', this.notifications, (n) => ({
+      '.event-time': clockTime(Date.parse(n.at)),
+      '.event-text': `${n.status} · ${n.names.join(', ') || 'no alerts'}`
+        + (n.count > 1 ? ` (${n.count} grouped)` : ''),
+    })));
   }
 
   renderBanner() {
@@ -374,6 +416,11 @@ export class ControlView {
       this.ctx.toast(`Could not crash it: ${err.message}`, 'bad');
     }
   }
+}
+
+// The header links come from the catalog, which knows the published ports.
+function ctxLink(ctx, name) {
+  return (ctx.links && ctx.links[name]) || '#';
 }
 
 export function describeFault(f) {

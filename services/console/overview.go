@@ -150,6 +150,24 @@ func buildOverview() overview {
 				},
 			},
 			{
+				ID:    "alertmanager",
+				Name:  "alertmanager",
+				Kind:  "infra",
+				Image: "prom/alertmanager",
+				Port:  "9093",
+				Role:  "Turns a firing rule into a notification.",
+				Detail: []string{
+					"Prometheus decides that a rule is firing. Alertmanager decides what to do about it: " +
+						"group related alerts into one notification, drop a ticket that a page already covers, " +
+						"and route it somewhere.",
+					"Both halves are on the control room. The alert list comes straight from Prometheus and " +
+						"shows everything that is pending or firing; the notification list shows what actually " +
+						"got delivered here. They are deliberately not the same set — the difference is " +
+						"grouping and inhibition doing their job.",
+					"In this workbench the route ends at the console itself, which just records what arrived.",
+				},
+			},
+			{
 				ID:    "grafana",
 				Name:  "grafana",
 				Kind:  "infra",
@@ -173,6 +191,8 @@ func buildOverview() overview {
 			{From: "console", To: "prometheus", Label: "PromQL queries"},
 			{From: "console", To: "checkout-api", Label: "injects faults"},
 			{From: "grafana", To: "prometheus", Label: "PromQL queries"},
+			{From: "prometheus", To: "alertmanager", Label: "fires burn-rate alerts"},
+			{From: "alertmanager", To: "console", Label: "webhook notification"},
 		},
 
 		Journey: []journeyStep{
@@ -220,6 +240,19 @@ func buildOverview() overview {
 					"requests, here — is the error budget: a concrete, spendable allowance for failure, and the number " +
 					"that turns an argument about reliability into arithmetic.",
 			},
+			{
+				N: 9, Where: "prometheus", Title: "The budget decides who to wake up",
+				Detail: "Prometheus evaluates the same ratio over several windows at once and compares each against a " +
+					"burn rate. Spending the budget 14.4 times faster than sustainable is a page; spending it at 1x is a " +
+					"ticket. Two windows must agree before anything fires, so a spike that has already passed stops " +
+					"alerting instead of ringing for hours.",
+			},
+			{
+				N: 10, Where: "alertmanager", Title: "The notification is delivered",
+				Detail: "Alertmanager groups the alerts for one SLO into a single notification, drops the ticket when a " +
+					"page for the same budget is already out, and delivers what is left. The control room shows both " +
+					"what is firing and what was delivered, because the two lists differ for interesting reasons.",
+			},
 		},
 
 		Baseline: []fact{
@@ -253,6 +286,12 @@ func buildOverview() overview {
 				Term:  "Burn rate",
 				Plain: "How many times faster than sustainable you are spending the budget right now.",
 				Here:  "A burn rate of 1 uses the whole hour's budget in exactly an hour. A burn rate of 30 uses it in two minutes — which is precisely what the first scenario does.",
+			},
+			{
+				Term:  "Multi-window alert",
+				Plain: "An alert that only fires when a fast window and a slow window agree that the budget is burning.",
+				Here: "The long window decides whether it matters; the short one decides whether it is still happening. " +
+					"Without the short window an alert keeps ringing long after the incident ended.",
 			},
 			{
 				Term:  "Bad event",

@@ -170,6 +170,22 @@ For each SLO, Sloth generates the recording rules (`slo:sli_error:ratio_rate5m`,
 | ticket | 3× | 1d | 2h | 10% |
 | ticket | 1× | 3d | 6h | 10% |
 
+Those windows belong to a 30-day period. The playground period is one hour, and scaling
+them proportionally would put the long windows at around five seconds — below the scrape
+interval, so unmeasurable. **Compressing an SLO period has a floor**, set by how often you
+scrape and how much traffic you have. What the workbench keeps is the burn rate
+thresholds; what gives way is budget efficiency:
+
+| Severity | Burn rate | Long window | Short window | Budget consumed when it fires |
+|---|---|---|---|---|
+| page | 14.4× | 2m | 1m | 48% |
+| page | 6× | 5m | 2m | 50% |
+| ticket | 3× | 15m | 5m | 75% |
+| ticket | 1× | 30m | 10m | 50% |
+
+Feedback in minutes instead of days, paid for in budget efficiency. The arithmetic lives
+in `observability/slo/windows/1h.yaml`.
+
 The short window acts as confirmation: it keeps an alert from staying lit for hours after
 the incident is over.
 
@@ -201,10 +217,10 @@ Cross-cutting exercise: in every scenario, compare the server-side SLI against k
 
 | Phase | Deliverable | Done when… |
 |---|---|---|
-| **0 — Skeleton** | Compose with Prometheus + Grafana and a minimal `checkout-api` exposing `/metrics`. | `make up` shows the RED dashboard with k6 traffic on it. |
-| **1 — Services and faults** | The three services, `pkg/faults`, the admin API, and a loadgen with a diurnal pattern. | Any fault from §5 can be injected with `curl` and seen in Grafana. |
-| **2 — SLIs/SLOs** | Sloth specs, recording rules, error budget dashboard. | A scenario shows the budget draining in real time. |
-| **3 — Alerting and game days** | Multi-window alerts, Alertmanager, runbooks, and a headless runner for the console's scenarios. | `make scenario-1` runs, alerts, and reports the budget consumed. |
+| **0 — Skeleton** ✅ | Compose with Prometheus + Grafana and a minimal `checkout-api` exposing `/metrics`. | `make up` shows the RED dashboard with k6 traffic on it. |
+| **1 — Services and faults** (partial: fault engine done, the other two services are not) | The three services, `pkg/faults`, the admin API, and a loadgen with a diurnal pattern. | Any fault from §5 can be injected with `curl` and seen in Grafana. |
+| **2 — SLIs/SLOs** ✅ | Sloth specs, recording rules, error budget in the console. | A scenario shows the budget draining in real time. |
+| **3 — Alerting and game days** | Multi-window alerts ✅, Alertmanager ✅, runbooks, and a headless runner for the console's scenarios. | `make scenario-1` runs, alerts, and reports the budget consumed. |
 | **4 — Kubernetes** | kind plus kube-prometheus-stack, the same services, scenario 10. | The same SLOs work on k8s without being rewritten. |
 | **5 — Extras (optional)** | OTel traces with Tempo, native histograms, Pyrra as an SLO UI. | — |
 

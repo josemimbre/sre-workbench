@@ -27,6 +27,7 @@ services:
       # they have to be the published ports rather than the compose network names.
       PROMETHEUS_PUBLIC_URL: http://localhost:9090
       GRAFANA_URL: http://localhost:3000/d/workbench-red
+      ALERTMANAGER_URL: http://localhost:9093
     ports:
       - "8090:8090"
     depends_on:
@@ -48,6 +49,18 @@ services:
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --web.external-url=http://localhost:9093
+    volumes:
+      - ../../observability/alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "9093:9093"
     restart: unless-stopped
 
   grafana:
@@ -94,4 +107,5 @@ services:
 
 volumes:
   prometheus-data:
+  alertmanager-data:
   grafana-data:

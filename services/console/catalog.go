@@ -25,6 +25,9 @@ type signalDef struct {
 	Unit   string  `json:"unit"`
 	Target float64 `json:"target,omitempty"`
 	Invert bool    `json:"invert,omitempty"`
+	// Derivation explains what a recording rule stands for, so a precomputed name never
+	// has to be taken on faith.
+	Derivation string `json:"derivation,omitempty"`
 }
 
 type field struct {
@@ -158,36 +161,53 @@ func buildCatalog() catalog {
 				Unit:   "rps",
 			},
 		},
+		// These read Sloth's recording rules rather than recomputing the maths inline.
+		// That is what a real setup does: the SLO spec is the source of truth, Prometheus
+		// precomputes it once, and every consumer reads the same number.
 		Budgets: []signalDef{
 			{
 				Key:  "availability_budget",
-				Name: "Availability budget left (" + budgetWindow + ")",
+				Name: "Availability budget left",
 				Spec: "How much of the 1% error budget is still unspent in the last hour.",
 				Why: "The budget is the whole point: it turns 'is the service healthy?' into a number you " +
 					"can spend. At 0% left, you stop shipping features and start fixing reliability.",
-				Query:  "1 - ((" + withWindow(errorRatio, budgetWindow) + ") / " + ratio(1-availabilityTarget) + ")",
-				Series: "1 - ((" + withWindow(errorRatio, budgetWindow) + ") / " + ratio(1-availabilityTarget) + ")",
-				Unit:   "ratio",
+				Query:      `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="availability"}`,
+				Series:     `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="availability"}`,
+				Derivation: "1 - (slo:sli_error:ratio_rate1h / slo:error_budget:ratio), where the error budget is vector(1-0.99).",
+				Unit:       "ratio",
 			},
 			{
-				Key:  "availability_burn_5m",
-				Name: "Burn rate (5m)",
+				Key:  "availability_burn",
+				Name: "Availability burn rate",
 				Spec: "How many times faster than sustainable the budget is being spent right now.",
-				Why: "A burn rate of 1 exhausts the budget exactly at the end of the window. The SRE " +
-					"Workbook pages at 14.4x over 1h, which is 2% of a 30-day budget gone.",
-				Query:  "(" + withWindow(errorRatio, "5m") + ") / " + ratio(1-availabilityTarget),
-				Series: "(" + withWindow(errorRatio, "5m") + ") / " + ratio(1-availabilityTarget),
-				Unit:   "rate",
-				Invert: true,
+				Why: "A burn rate of 1 exhausts the budget exactly at the end of the window. 14.4 pages, " +
+					"1 opens a ticket — the thresholds the alerts are built on.",
+				Query:      `slo:current_burn_rate:ratio{sloth_service="$JOB", sloth_slo="availability"}`,
+				Series:     `slo:current_burn_rate:ratio{sloth_service="$JOB", sloth_slo="availability"}`,
+				Derivation: "slo:sli_error:ratio_rate1m / slo:error_budget:ratio — the shortest window, so it reacts fast.",
+				Unit:       "rate",
+				Invert:     true,
 			},
 			{
-				Key:    "latency_budget",
-				Name:   "Latency budget left (" + budgetWindow + ")",
-				Spec:   "How much of the 5% slow-request budget is still unspent in the last hour.",
-				Why:    "Latency has its own budget. A service can be 100% available and still be out of budget.",
-				Query:  "1 - ((1 - (" + withWindow(latencyGoodRatio, budgetWindow) + ")) / " + ratio(1-latencyTarget) + ")",
-				Series: "1 - ((1 - (" + withWindow(latencyGoodRatio, budgetWindow) + ")) / " + ratio(1-latencyTarget) + ")",
-				Unit:   "ratio",
+				Key:        "latency_budget",
+				Name:       "Latency budget left",
+				Spec:       "How much of the 5% slow-request budget is still unspent in the last hour.",
+				Why:        "Latency has its own budget. A service can be 100% available and still be out of budget.",
+				Query:      `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="latency"}`,
+				Series:     `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="latency"}`,
+				Derivation: "Same shape as availability, with bad events counted as requests slower than 300ms.",
+				Unit:       "ratio",
+			},
+			{
+				Key:        "latency_burn",
+				Name:       "Latency burn rate",
+				Spec:       "How fast the slow-request budget is being spent right now.",
+				Why:        "Run the tail-latency scenario and watch this climb while availability never moves.",
+				Query:      `slo:current_burn_rate:ratio{sloth_service="$JOB", sloth_slo="latency"}`,
+				Series:     `slo:current_burn_rate:ratio{sloth_service="$JOB", sloth_slo="latency"}`,
+				Derivation: "slo:sli_error:ratio_rate1m / slo:error_budget:ratio for the latency SLO.",
+				Unit:       "rate",
+				Invert:     true,
 			},
 		},
 		Faults: []faultDef{
@@ -348,6 +368,30 @@ func buildCatalog() catalog {
 					"The service measures itself, and k6 measures the service. Both feed the same Prometheus.",
 					"They disagree exactly when it matters: a process that crashes cannot report its own failures, and a request that never arrives is invisible to the server. The client's number is the one closer to the truth.",
 					"Crash the process and compare the two throughput lines.",
+				},
+			},
+			{
+				Title: "Why the alerts are generated, not written",
+				Body: []string{
+					"The SLO is declared once, in observability/slo, as a target and a pair of queries for good and bad events. Sloth turns that into seven recording rules per SLO plus four multi-window alerts, and `make slo-gen` commits the result.",
+					"Hand-writing them is where SLO setups rot: the dashboard ends up computing the ratio slightly differently from the alert, and nobody notices until an incident. One declaration, one generator, one set of numbers.",
+					"The generated file is committed, so the workbench comes up without anyone having to run the generator first. Read observability/prometheus/rules/checkout-api.yml to see exactly what was produced.",
+				},
+			},
+			{
+				Title: "Compressed windows have a floor",
+				Body: []string{
+					"The SRE Workbook's alert catalogue — page at 14.4x over an hour, ticket at 1x over three days — is calibrated for a 30-day SLO period. Scaled proportionally to this playground's one-hour period, its long windows would land at about five seconds, below the scrape interval, so they could never be measured at all.",
+					"So the burn rate thresholds are kept and the budget percentages give way. Paging at 14.4x over a two-minute window means the page arrives once 48% of the hour's budget is gone, where the Workbook's version arrives at 2%.",
+					"That is the real trade of a compressed period: feedback in minutes instead of days, paid for in budget efficiency. The arithmetic is written out in observability/slo/windows/1h.yaml.",
+				},
+			},
+			{
+				Title: "Reading the budget honestly",
+				Body: []string{
+					"Every scenario's arithmetic assumes the one-hour window is full of steady traffic. A rolling window does not wait for that: right after the stack comes up, or after a service is rebuilt and its counters start again, the window holds twenty minutes of data and still calls itself an hour.",
+					"The ratio it reports is then an average over what it has, not over an hour, so the same incident reads as a larger share of the budget than it really is. Give the workbench an hour of quiet before trusting a budget number to the decimal.",
+					"The burn rate does not have this problem — it is computed over a one-minute window, which fills up immediately. That is another reason alerting on burn rate beats alerting on budget remaining.",
 				},
 			},
 			{

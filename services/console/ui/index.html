@@ -24,6 +24,7 @@
   </nav>
 
   <div class="topbar-right">
+    <span class="pill" id="pill-alerts" hidden></span>
     <span class="pill" id="pill-faults" hidden></span>
     <span class="pill" id="pill-status">connecting…</span>
     <select id="service-select" title="Service under test"></select>
@@ -60,7 +61,7 @@
       <!-- Positions are hand-placed to match the five containers in the compose file.
            An auto-layout would be more general and much worse to look at. -->
       <div class="diagram">
-        <svg viewBox="0 0 760 280" class="diagram-svg" role="img" aria-label="Architecture diagram">
+        <svg viewBox="0 0 760 330" class="diagram-svg" role="img" aria-label="Architecture diagram">
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--text-faint)"/>
@@ -76,14 +77,19 @@
           <path class="edge edge-soft" d="M125 60 C125 12, 625 12, 625 54" marker-end="url(#arrow)"/>
           <text class="edge-label" x="375" y="22" text-anchor="middle">pushes its own measurements</text>
 
-          <path class="edge" d="M255 200 L340 124" marker-end="url(#arrow)"/>
-          <text class="edge-label" x="266" y="170" text-anchor="start">injects faults</text>
+          <path class="edge" d="M140 200 L300 124" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="150" y="162" text-anchor="start">injects faults</text>
 
-          <path class="edge edge-soft" d="M335 222 L538 128" marker-end="url(#arrow)"/>
-          <text class="edge-label" x="472" y="198" text-anchor="middle">queries</text>
+          <path class="edge edge-soft" d="M210 214 L532 112" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="372" y="184" text-anchor="middle">queries</text>
 
-          <path class="edge edge-soft" d="M625 200 L625 124" marker-end="url(#arrow)"/>
-          <text class="edge-label" x="634" y="166" text-anchor="start">queries</text>
+          <path class="edge edge-soft" d="M420 200 L556 124" marker-end="url(#arrow)"/>
+
+          <path class="edge" d="M625 116 L625 194" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="634" y="160" text-anchor="start">fires alerts</text>
+
+          <path class="edge" d="M600 256 C560 308, 180 308, 128 262" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="366" y="318" text-anchor="middle">webhook notification</text>
 
           <g class="node node-client" data-node="loadgen" role="button" tabindex="0">
             <rect x="40" y="60" width="170" height="56" rx="10"/>
@@ -101,14 +107,19 @@
             <text class="node-role" x="554" y="102">infra · :9090</text>
           </g>
           <g class="node node-infra" data-node="console" role="button" tabindex="0">
-            <rect x="165" y="200" width="170" height="56" rx="10"/>
-            <text class="node-name" x="179" y="224">console</text>
-            <text class="node-role" x="179" y="242">infra · :8090</text>
+            <rect x="40" y="200" width="170" height="56" rx="10"/>
+            <text class="node-name" x="54" y="224">console</text>
+            <text class="node-role" x="54" y="242">infra · :8090</text>
           </g>
           <g class="node node-infra" data-node="grafana" role="button" tabindex="0">
+            <rect x="290" y="200" width="170" height="56" rx="10"/>
+            <text class="node-name" x="304" y="224">grafana</text>
+            <text class="node-role" x="304" y="242">infra · :3000</text>
+          </g>
+          <g class="node node-infra" data-node="alertmanager" role="button" tabindex="0">
             <rect x="540" y="200" width="170" height="56" rx="10"/>
-            <text class="node-name" x="554" y="224">grafana</text>
-            <text class="node-role" x="554" y="242">infra · :3000</text>
+            <text class="node-name" x="554" y="224">alertmanager</text>
+            <text class="node-role" x="554" y="242">infra · :9093</text>
           </g>
         </svg>
       </div>
@@ -248,6 +259,7 @@
       <p class="query-spec"></p>
       <p class="query-why"></p>
       <pre class="promql"></pre>
+      <p class="query-derivation" hidden></p>
     </div>
   </details>
 </template>
@@ -263,6 +275,25 @@
     </div>
 
     <div class="tiles" data-slot="tiles"></div>
+
+    <section class="panel">
+      <div class="panel-head panel-head-row">
+        <div>
+          <h3>Alerts</h3>
+          <p>Pending and firing right now, evaluated from the burn-rate rules.</p>
+        </div>
+        <a class="btn btn-ghost btn-sm" data-slot="am-link" target="_blank" rel="noopener">Alertmanager</a>
+      </div>
+      <div data-slot="alert-list"></div>
+      <details class="explain">
+        <summary>What Alertmanager actually delivered</summary>
+        <div class="explain-body">
+          <p>Grouping and inhibition run before anything is sent, so this list is shorter than the one
+          above — a page for a burning budget suppresses the ticket for the same budget.</p>
+          <div data-slot="notifications"></div>
+        </div>
+      </details>
+    </section>
 
     <div class="control-grid">
       <section class="panel">
@@ -323,6 +354,24 @@
         </section>
       </div>
     </div>
+  </div>
+</template>
+
+<template id="tpl-alert">
+  <div class="alert-row">
+    <span class="alert-state"></span>
+    <div class="alert-main">
+      <div class="alert-name"></div>
+      <div class="alert-meta"></div>
+    </div>
+    <span class="pill alert-severity"></span>
+  </div>
+</template>
+
+<template id="tpl-notification">
+  <div class="event">
+    <span class="event-time"></span>
+    <span class="event-text"></span>
   </div>
 </template>
 

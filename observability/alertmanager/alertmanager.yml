@@ -1,0 +1,38 @@
+# Alertmanager is here for the part of the pipeline Prometheus does not do: grouping,
+# deduplication, silencing and routing. In the workbench it routes everything to the
+# console, which records what arrived and shows it next to the budget that caused it.
+
+global:
+  resolve_timeout: 1m
+
+route:
+  receiver: console
+  # Group by the SLO rather than by alertname, so the page and the ticket for the same
+  # burning budget arrive as one notification instead of two.
+  group_by: [sloth_service, sloth_slo]
+  # Playground timings. Production values are minutes, not seconds: here the whole point
+  # is to see the notification land while the experiment is still running.
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 5m
+
+  routes:
+    # A page and a ticket are the same signal at different urgencies. Splitting them lets
+    # the console show which one a scenario managed to trigger.
+    - receiver: console
+      matchers: [severity="page"]
+      group_wait: 5s
+    - receiver: console
+      matchers: [severity="ticket"]
+
+# A page for a budget that is already burning fast makes the slower ticket redundant.
+inhibit_rules:
+  - source_matchers: [severity="page"]
+    target_matchers: [severity="ticket"]
+    equal: [sloth_service, sloth_slo]
+
+receivers:
+  - name: console
+    webhook_configs:
+      - url: http://console:8090/api/alerts
+        send_resolved: true

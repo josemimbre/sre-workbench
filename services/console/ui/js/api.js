@@ -25,6 +25,9 @@ export const api = {
   // injections made outside this page still show up on the charts.
   annotations: (job, minutes) => request(`/api/annotations?${qs({ job, minutes })}`),
 
+  // What Prometheus has pending or firing, plus what Alertmanager delivered here.
+  alerts: () => request('/api/alerts'),
+
   faults: (service) => request(`/api/faults?${qs({ service })}`),
 
   injectFault: (service, fault) => request(`/api/faults?${qs({ service })}`, {

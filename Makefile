@@ -51,3 +51,13 @@ test: ## Run the Go tests
 .PHONY: check
 check: ## fmt + vet + build of the services
 	cd services && gofmt -l . && go vet ./... && go build ./...
+
+.PHONY: slo-gen
+slo-gen: ## Regenerate the SLO recording rules and alerts from observability/slo
+	docker run --rm --user "$$(id -u):$$(id -g)" -v "$(PWD)/observability:/obs" \
+		ghcr.io/slok/sloth:latest generate \
+		-i /obs/slo/checkout-api.yml \
+		-o /obs/prometheus/rules/checkout-api.yml \
+		--slo-period-windows-path /obs/slo/windows \
+		--default-slo-period 1h
+	$(MAKE) reload

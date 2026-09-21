@@ -44,6 +44,7 @@ func main() {
 		client:   &http.Client{Timeout: 10 * time.Second},
 		grafana:  env("GRAFANA_URL", "http://localhost:3000"),
 		promURL:  env("PROMETHEUS_PUBLIC_URL", "http://localhost:9090"),
+		alertURL: env("ALERTMANAGER_URL", "http://localhost:9093"),
 	}
 	if len(srv.services) == 0 {
 		log.Error("no services configured", "hint", "SERVICES=name=http://host:port,...")
@@ -62,6 +63,9 @@ func main() {
 	mux.HandleFunc("GET /api/summary", srv.handleSummary)
 	mux.HandleFunc("GET /api/series", srv.handleSeries)
 	mux.HandleFunc("GET /api/annotations", srv.handleAnnotations)
+	mux.HandleFunc("GET /api/alerts", srv.handleAlerts)
+	// Alertmanager posts here; it is not part of the browser-facing API.
+	mux.HandleFunc("POST /api/alerts", srv.handleAlertWebhook)
 	mux.HandleFunc("GET /api/faults", srv.handleListFaults)
 	mux.HandleFunc("POST /api/faults", srv.handleAddFault)
 	mux.HandleFunc("DELETE /api/faults", srv.handleClearFaults)
@@ -96,11 +100,14 @@ type server struct {
 	services map[string]string
 	// order keeps the configured services in the order they were declared, so the
 	// default target is stable rather than whatever the map iterates first.
-	order   []string
-	catalog catalog
-	client  *http.Client
-	grafana string
-	promURL string
+	order    []string
+	catalog  catalog
+	client   *http.Client
+	grafana  string
+	promURL  string
+	alertURL string
+
+	notifications notificationStore
 }
 
 func (s *server) serviceNames() []string { return s.order }
@@ -109,7 +116,11 @@ func (s *server) handleCatalog(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"catalog":  s.catalog,
 		"services": s.serviceNames(),
-		"links":    map[string]string{"grafana": s.grafana, "prometheus": s.promURL},
+		"links": map[string]string{
+			"grafana":      s.grafana,
+			"prometheus":   s.promURL,
+			"alertmanager": s.alertURL,
+		},
 	})
 }
 

@@ -101,4 +101,5 @@ const query = (sig) => ({
   '.query-spec': sig.spec,
   '.query-why': sig.why,
   '.promql': sig.query,
+  '.query-derivation': { hidden: !sig.derivation, text: sig.derivation || '' },
 });
