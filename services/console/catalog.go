@@ -226,8 +226,8 @@ func buildCatalog() catalog {
 				Name: "Latency budget",
 				Spec: "How much of the 5% slow-request budget is still unspent in the last hour.",
 				Why: "Latency has its own budget. A service can be 100% available and still be out of " +
-					"budget. Like the availability one, it is a balance: it goes negative when overspent " +
-					"and recovers on its own as the hour rolls forward.",
+					"budget. Like the availability one it is a balance, and it recovers the same way: " +
+					"flat for an hour after the slow requests stop, then back up all at once.",
 				Query:      `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="latency"}`,
 				Series:     `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="latency"}`,
 				Derivation: "Same shape as availability, with bad events counted as requests slower than 300ms.",
@@ -278,7 +278,7 @@ func buildCatalog() catalog {
 				Name: "Short blip",
 				Hypothesis: "30% of requests fail for 2 minutes. Over a 1-hour window that is 0.30 × (2/60) = 1% " +
 					"of all requests — exactly the whole error budget. A two-minute incident can cost an entire hour.",
-				Watch:    "Availability budget left should fall to roughly 0%. The 5m burn rate peaks around 30x.",
+				Watch:    "The availability budget should fall to roughly nothing. The 1m burn rate peaks around 30x.",
 				Duration: 120,
 				Faults: []faults.Fault{
 					{Type: faults.TypeError, Status: 500, Probability: 0.3, TTLSeconds: 120, Note: "short-blip"},
@@ -403,6 +403,7 @@ func buildCatalog() catalog {
 				Body: []string{
 					"Every scenario's arithmetic assumes the one-hour window is full of steady traffic. A rolling window does not wait for that: right after the stack comes up, or after a service is rebuilt and its counters start again, the window holds twenty minutes of data and still calls itself an hour.",
 					"The ratio it reports is then an average over what it has, not over an hour, so the same incident reads as a larger share of the budget than it really is. Give the workbench an hour of quiet before trusting a budget number to the decimal.",
+					"The same window is why scenarios do not reset between runs. An hour after a blip its errors are still being counted at full weight, so a second scenario started ten minutes later spends what is left of a budget the first one already dented, and neither one's arithmetic comes out as written. Run one, read it, and leave an hour before the next — or accept that you are now measuring both at once.",
 					"The burn rate does not have this problem — it is computed over a one-minute window, which fills up immediately. That is another reason alerting on burn rate beats alerting on budget remaining.",
 				},
 			},
