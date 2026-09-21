@@ -237,18 +237,6 @@ func buildCatalog() catalog {
 					{Name: "ttl_seconds", Label: "Duration", Kind: "seconds", Min: 5, Max: 3600, Step: 5, Default: 300, Help: ""},
 				},
 			},
-			{
-				Type: "cpu_burn",
-				Name: "CPU burn",
-				What: "Spins CPU in the background, slowing down every endpoint at once.",
-				Teaches: "A noisy neighbour: nothing is 'broken', but everything is slower. Correlated " +
-					"degradation looks very different from an injected delay.",
-				Fields: []field{
-					{Name: "cores", Label: "Cores", Kind: "int", Min: 1, Max: 4, Step: 1, Default: 2, Help: "Capped at 4: this burns your laptop, not a data centre."},
-					{Name: "duty", Label: "Duty cycle", Kind: "ratio", Min: 0.1, Max: 1, Step: 0.05, Default: 0.8, Help: "Share of the time each goroutine spends spinning."},
-					{Name: "ttl_seconds", Label: "Duration", Kind: "seconds", Min: 5, Max: 600, Step: 5, Default: 120, Help: "Capped at 10 minutes."},
-				},
-			},
 		},
 		Scenarios: []scenario{
 			{
@@ -293,17 +281,6 @@ func buildCatalog() catalog {
 				Duration: 300,
 				Faults: []faults.Fault{
 					{Type: faults.TypeLatency, DelayMS: 2000, Probability: 0.05, TTLSeconds: 300, Note: "tail-latency"},
-				},
-			},
-			{
-				ID:   "cpu-saturation",
-				Name: "CPU saturation",
-				Hypothesis: "Two cores burn for 3 minutes. Nothing returns an error, but queueing raises latency " +
-					"across the board and in-flight requests climb before latency does.",
-				Watch:    "In flight rises first, then p99, then the latency SLI. Errors stay at zero.",
-				Duration: 180,
-				Faults: []faults.Fault{
-					{Type: faults.TypeCPUBurn, Cores: 2, Duty: 0.9, TTLSeconds: 180, Note: "cpu-saturation"},
 				},
 			},
 			{
@@ -399,7 +376,7 @@ func buildCatalog() catalog {
 				Title: "Why every fault has a TTL",
 				Body: []string{
 					"A fault with no expiry is a fault you forget about, and it silently poisons every later experiment.",
-					"Every injection here carries a deadline, capped at one hour, and CPU burns are capped at ten minutes. Clear all is always one click away.",
+					"Every injection here carries a deadline, capped at one hour, and clear all is one click away.",
 					"This is also why faults are injected rather than coded in: the service has no hidden failure modes, only the ones you asked for.",
 				},
 			},

@@ -28,18 +28,12 @@ const (
 	TypeError Type = "error"
 	// TypeLatency delays the request before serving it normally.
 	TypeLatency Type = "latency"
-	// TypeCPUBurn spins CPU in the background, degrading every endpoint at once.
-	TypeCPUBurn Type = "cpu_burn"
 )
 
 const (
 	// MaxTTLSeconds bounds how long any fault can live. One hour is already longer
-	// than every scenario in the plan.
+	// than every scenario here.
 	MaxTTLSeconds = 3600
-	// cpuBurnMaxTTL is stricter: a runaway CPU fault degrades the host, not just the
-	// experiment.
-	cpuBurnMaxTTL = 600
-	maxCPUCores   = 4
 	defaultTTL    = 60
 )
 
@@ -55,20 +49,13 @@ type Fault struct {
 	// Status is the code returned by an error fault.
 	Status int `json:"status,omitempty"`
 	// DelayMS and JitterMS shape a latency fault: delay ± jitter, uniformly.
-	DelayMS  int `json:"delay_ms,omitempty"`
-	JitterMS int `json:"jitter_ms,omitempty"`
-	// Cores and Duty shape a CPU burn: how many goroutines spin, and what share of
-	// the time they spend spinning rather than sleeping.
-	Cores int     `json:"cores,omitempty"`
-	Duty  float64 `json:"duty,omitempty"`
-
+	DelayMS    int       `json:"delay_ms,omitempty"`
+	JitterMS   int       `json:"jitter_ms,omitempty"`
 	TTLSeconds int       `json:"ttl_seconds"`
 	CreatedAt  time.Time `json:"created_at"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	// Note records where the fault came from, e.g. the scenario that injected it.
 	Note string `json:"note,omitempty"`
-
-	stop func()
 }
 
 // Remaining is how long the fault still has to live, for the UI countdown.
@@ -82,7 +69,7 @@ func (f Fault) Remaining() time.Duration {
 
 func (f *Fault) normalize() error {
 	switch f.Type {
-	case TypeError, TypeLatency, TypeCPUBurn:
+	case TypeError, TypeLatency:
 	default:
 		return fmt.Errorf("unknown fault type %q", f.Type)
 	}
@@ -100,12 +87,8 @@ func (f *Fault) normalize() error {
 	if f.TTLSeconds < 1 {
 		return fmt.Errorf("ttl_seconds must be at least 1")
 	}
-	maxTTL := MaxTTLSeconds
-	if f.Type == TypeCPUBurn {
-		maxTTL = cpuBurnMaxTTL
-	}
-	if f.TTLSeconds > maxTTL {
-		return fmt.Errorf("ttl_seconds must be at most %d for a %s fault", maxTTL, f.Type)
+	if f.TTLSeconds > MaxTTLSeconds {
+		return fmt.Errorf("ttl_seconds must be at most %d", MaxTTLSeconds)
 	}
 
 	switch f.Type {
@@ -122,19 +105,6 @@ func (f *Fault) normalize() error {
 		}
 		if f.JitterMS < 0 {
 			return fmt.Errorf("jitter_ms cannot be negative")
-		}
-	case TypeCPUBurn:
-		if f.Cores == 0 {
-			f.Cores = 1
-		}
-		if f.Cores < 1 || f.Cores > maxCPUCores {
-			return fmt.Errorf("cores must be between 1 and %d, got %d", maxCPUCores, f.Cores)
-		}
-		if f.Duty == 0 {
-			f.Duty = 0.7
-		}
-		if f.Duty <= 0 || f.Duty > 1 {
-			return fmt.Errorf("duty must be between 0 and 1, got %v", f.Duty)
 		}
 	}
 	return nil
@@ -166,8 +136,9 @@ func New(reg prometheus.Registerer) *Engine {
 		}, []string{"type"}),
 	}
 
-	// Expiry is driven by a janitor rather than only by request traffic, because a
-	// cpu_burn fault has to stop even when nothing is being served.
+	// Expiry is driven by a janitor rather than only by request traffic, so a fault
+	// stops counting as active the moment its TTL runs out, even if nothing is being
+	// served and no request comes along to notice.
 	done := make(chan struct{})
 	e.janitorStop = sync.OnceFunc(func() { close(done) })
 	go func() {
@@ -185,7 +156,7 @@ func New(reg prometheus.Registerer) *Engine {
 	return e
 }
 
-// Close stops the janitor and every running fault. Only tests need it.
+// Close stops the janitor and removes every fault. Only tests need it.
 func (e *Engine) Close() {
 	e.janitorStop()
 	e.Clear()
@@ -203,11 +174,6 @@ func (e *Engine) Add(in Fault) (Fault, error) {
 	in.ExpiresAt = now.Add(time.Duration(in.TTLSeconds) * time.Second)
 
 	f := &in
-	if f.Type == TypeCPUBurn {
-		stop := make(chan struct{})
-		f.stop = sync.OnceFunc(func() { close(stop) })
-		burnCPU(f.Cores, f.Duty, stop)
-	}
 
 	e.mu.Lock()
 	e.faults[f.ID] = f
@@ -217,18 +183,13 @@ func (e *Engine) Add(in Fault) (Fault, error) {
 	return *f, nil
 }
 
-// Remove deletes one fault, stopping its side effects.
+// Remove deletes one fault.
 func (e *Engine) Remove(id string) bool {
 	e.mu.Lock()
-	f, ok := e.faults[id]
-	if ok {
-		delete(e.faults, id)
-	}
+	_, ok := e.faults[id]
+	delete(e.faults, id)
 	e.mu.Unlock()
 
-	if ok && f.stop != nil {
-		f.stop()
-	}
 	e.syncGauges()
 	return ok
 }
@@ -241,11 +202,6 @@ func (e *Engine) Clear() int {
 	e.faults = map[string]*Fault{}
 	e.mu.Unlock()
 
-	for _, f := range old {
-		if f.stop != nil {
-			f.stop()
-		}
-	}
 	e.syncGauges()
 	return len(old)
 }
@@ -266,29 +222,24 @@ func (e *Engine) List() []Fault {
 
 func (e *Engine) prune() {
 	now := time.Now()
-	var expired []*Fault
+	expired := 0
 
 	e.mu.Lock()
 	for id, f := range e.faults {
 		if now.After(f.ExpiresAt) {
-			expired = append(expired, f)
 			delete(e.faults, id)
+			expired++
 		}
 	}
 	e.mu.Unlock()
 
-	for _, f := range expired {
-		if f.stop != nil {
-			f.stop()
-		}
-	}
-	if len(expired) > 0 {
+	if expired > 0 {
 		e.syncGauges()
 	}
 }
 
 func (e *Engine) syncGauges() {
-	counts := map[Type]float64{TypeError: 0, TypeLatency: 0, TypeCPUBurn: 0}
+	counts := map[Type]float64{TypeError: 0, TypeLatency: 0}
 	e.mu.RLock()
 	for _, f := range e.faults {
 		counts[f.Type]++
@@ -327,7 +278,7 @@ func (e *Engine) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// matching returns the request-scoped faults for a path, latency before error: a request
+// matching returns the faults that apply to a path, latency before error: a request
 // that is going to fail should still pay for the delay, which is what a real timeout
 // looks like.
 func (e *Engine) matching(path string) []Fault {
@@ -336,9 +287,6 @@ func (e *Engine) matching(path string) []Fault {
 
 	var out []Fault
 	for _, f := range e.faults {
-		if f.Type == TypeCPUBurn {
-			continue
-		}
 		if f.Path != "" && f.Path != path {
 			continue
 		}
@@ -358,30 +306,4 @@ func latencyOf(f Fault) time.Duration {
 		return 0
 	}
 	return d
-}
-
-// burnCPU spins `cores` goroutines that alternate between busy work and sleep, so the
-// duty cycle controls how much of a core each one really takes.
-func burnCPU(cores int, duty float64, stop <-chan struct{}) {
-	const window = 20 * time.Millisecond
-	busy := time.Duration(float64(window) * duty)
-	idle := window - busy
-
-	for i := 0; i < cores; i++ {
-		go func() {
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
-				deadline := time.Now().Add(busy)
-				for time.Now().Before(deadline) { //nolint:revive // the spinning is the point
-				}
-				if idle > 0 {
-					time.Sleep(idle)
-				}
-			}
-		}()
-	}
 }

@@ -131,7 +131,7 @@ func TestValidation(t *testing.T) {
 		"ttl above the cap":     {Type: TypeError, TTLSeconds: MaxTTLSeconds + 1},
 		"status out of range":   {Type: TypeError, Status: 200, TTLSeconds: 10},
 		"latency without delay": {Type: TypeLatency, TTLSeconds: 10},
-		"too many cores":        {Type: TypeCPUBurn, Cores: 99, TTLSeconds: 10},
+		"negative jitter":       {Type: TypeLatency, DelayMS: 10, JitterMS: -1, TTLSeconds: 10},
 	}
 	for name, f := range cases {
 		if _, err := e.Add(f); err == nil {

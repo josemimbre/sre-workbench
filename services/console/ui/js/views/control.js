@@ -425,12 +425,9 @@ function ctxLink(ctx, name) {
 
 export function describeFault(f) {
   const bits = [];
-  if (f.probability !== undefined && f.type !== 'cpu_burn') {
-    bits.push(`${(f.probability * 100).toFixed(0)}% of requests`);
-  }
+  if (f.probability !== undefined) bits.push(`${(f.probability * 100).toFixed(0)}% of requests`);
   if (f.type === 'error') bits.push(`status ${f.status}`);
   if (f.type === 'latency') bits.push(`+${f.delay_ms}ms${f.jitter_ms ? ` ±${f.jitter_ms}ms` : ''}`);
-  if (f.type === 'cpu_burn') bits.push(`${f.cores} core${f.cores > 1 ? 's' : ''} at ${(f.duty * 100).toFixed(0)}%`);
   if (f.path) bits.push(`path ${f.path}`);
   if (f.note) bits.push(`from “${f.note}”`);
   return bits.join(' · ');

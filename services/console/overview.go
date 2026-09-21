@@ -326,13 +326,6 @@ func buildOverview() overview {
 				InvisibleIn: []string{"Availability SLI — it stays at a perfect 100% while users wait"},
 			},
 			{
-				Fault:       "CPU burn",
-				Where:       "In the background of the whole process, not on the request path.",
-				Effect:      "Everything competes for CPU, so every endpoint slows down at once. Nothing is broken; everything is worse.",
-				VisibleIn:   []string{"In flight, first", "then p99", "then the Latency SLI"},
-				InvisibleIn: []string{"Availability SLI", "Anything that only looks at error counts"},
-			},
-			{
 				Fault:       "Crash",
 				Where:       "The process itself. No TTL, nothing to undo.",
 				Effect:      "The service dies and is restarted automatically, with all its counters back at zero.",
