@@ -61,6 +61,7 @@ func main() {
 	mux.HandleFunc("GET /api/catalog", srv.handleCatalog)
 	mux.HandleFunc("GET /api/summary", srv.handleSummary)
 	mux.HandleFunc("GET /api/series", srv.handleSeries)
+	mux.HandleFunc("GET /api/annotations", srv.handleAnnotations)
 	mux.HandleFunc("GET /api/faults", srv.handleListFaults)
 	mux.HandleFunc("POST /api/faults", srv.handleAddFault)
 	mux.HandleFunc("DELETE /api/faults", srv.handleClearFaults)
@@ -165,6 +166,60 @@ func (s *server) handleSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"key": key, "points": points})
+}
+
+// handleAnnotations returns the stretches of time when a fault was active, so the charts
+// can shade them. It reads the service's own faults_active gauge rather than trusting the
+// browser to remember what it injected: a fault injected from curl, from a scenario, or
+// before the page was opened has to show up on the chart just the same.
+func (s *server) handleAnnotations(w http.ResponseWriter, r *http.Request) {
+	minutes := intParam(r, "minutes", 30, 1, 360)
+	step := max(minutes*60/120, 5)
+
+	points, err := s.prom.rangeQuery(r.Context(),
+		withJob(`sum(faults_active{job="$JOB"})`, s.job(r)), minutes, step)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, apiError{err.Error()})
+		return
+	}
+
+	type span struct {
+		Start   float64 `json:"start"`
+		End     float64 `json:"end"`
+		Ongoing bool    `json:"ongoing"`
+	}
+
+	spans := []span{}
+	var open *span
+	var lastTS float64
+	for _, p := range points {
+		if p[0] == nil {
+			continue
+		}
+		ts, v := *p[0], 0.0
+		if p[1] != nil {
+			v = *p[1]
+		}
+		lastTS = ts
+
+		switch {
+		case v > 0 && open == nil:
+			// A gauge sampled every `step` seconds only tells us the fault was already
+			// active by now, so the span starts one step earlier than the first sample.
+			open = &span{Start: ts - float64(step)}
+		case v == 0 && open != nil:
+			open.End = ts
+			spans = append(spans, *open)
+			open = nil
+		}
+	}
+	if open != nil {
+		open.End = lastTS
+		open.Ongoing = true
+		spans = append(spans, *open)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"spans": spans})
 }
 
 func (s *server) lookupSignal(key string) (signalDef, bool) {

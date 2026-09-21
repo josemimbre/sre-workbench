@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SRE Workbench Console</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📉</text></svg>">
+<title>SRE Workbench</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%230b0f16'/><path d='M2 11 L6 7 L9 9 L14 3' stroke='%233fd17a' stroke-width='1.6' fill='none'/></svg>">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,95 +12,424 @@
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark"></span>
-    <div>
-      <h1>SRE Workbench</h1>
-      <p class="brand-sub">Break it on purpose, then read the budget.</p>
+    <div class="brand-text">
+      <span class="brand-name">SRE Workbench</span>
+      <span class="brand-sub">Break it on purpose, then read the budget</span>
     </div>
   </div>
 
+  <nav class="nav">
+    <button class="nav-item" data-view="overview" title="What is running here">Overview</button>
+    <button class="nav-item" data-view="control" title="Watch it and break it">Control room</button>
+  </nav>
+
   <div class="topbar-right">
-    <label class="field-inline">
-      <span>Service</span>
-      <select id="service-select"></select>
-    </label>
-    <a id="link-grafana" class="btn btn-ghost" target="_blank" rel="noopener">Grafana</a>
-    <a id="link-prometheus" class="btn btn-ghost" target="_blank" rel="noopener">Prometheus</a>
-    <button id="clear-all" class="btn btn-warn">Clear all faults</button>
+    <span class="pill" id="pill-faults" hidden></span>
+    <span class="pill" id="pill-status">connecting…</span>
+    <select id="service-select" title="Service under test"></select>
+    <a id="link-grafana" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">Grafana</a>
+    <a id="link-prometheus" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">Prometheus</a>
   </div>
 </header>
 
-<main>
-  <section class="intro">
-    <p id="intro-text">
-      Everything on this page is a live PromQL query against the running workbench. Break the
-      service with a fault or a scenario below, then watch which numbers move — and, more
-      interestingly, which ones do not.
-    </p>
-    <div class="intro-meta">
-      <span class="pill" id="pill-status">connecting…</span>
-      <span class="pill pill-quiet" id="pill-slo"></span>
-      <span class="pill pill-quiet" id="pill-updated"></span>
-    </div>
-  </section>
+<div class="subbar">
+  <span class="pill pill-quiet" id="pill-slo"></span>
+  <span class="subbar-updated">updated <span id="pill-updated">—</span></span>
+</div>
 
-  <section>
-    <div class="section-head">
-      <h2>Live signals</h2>
-      <p>The RED metrics and the two SLIs the error budget is built from. Last 30 minutes.</p>
-    </div>
-    <div id="signals" class="card-grid"></div>
-  </section>
-
-  <section>
-    <div class="section-head">
-      <h2>Error budget</h2>
-      <p>How much failure is still affordable in the current 1-hour window, and how fast it is being spent.</p>
-    </div>
-    <div id="budgets" class="card-grid"></div>
-  </section>
-
-  <section>
-    <div class="section-head">
-      <h2>Inject a fault</h2>
-      <p>Every fault is scoped, probabilistic and time-boxed. It removes itself when its TTL runs out.</p>
-    </div>
-    <div id="faults" class="card-grid"></div>
-    <div class="danger-strip">
-      <div>
-        <strong>Crash the process</strong>
-        <p>No TTL, nothing to undo. The container restart policy brings it back with its counters reset — and the client-side line keeps going while the server's own metrics simply vanish.</p>
-      </div>
-      <button id="crash" class="btn btn-danger">Crash it</button>
-    </div>
-  </section>
-
-  <section>
-    <div class="section-head">
-      <h2>Active faults</h2>
-      <p>What is currently wrong with the service, and when it stops.</p>
-    </div>
-    <div id="active-faults" class="active-faults"></div>
-  </section>
-
-  <section>
-    <div class="section-head">
-      <h2>Scenarios</h2>
-      <p>Scripted game days. The hypothesis is written before the run — read it, predict the outcome, then press the button.</p>
-    </div>
-    <div id="scenarios" class="card-grid card-grid-wide"></div>
-  </section>
-
-  <section>
-    <div class="section-head">
-      <h2>How this works</h2>
-      <p>The reasoning behind every number above.</p>
-    </div>
-    <div id="topics" class="topics"></div>
-  </section>
-</main>
+<main id="view"></main>
 
 <div id="toasts" class="toasts"></div>
 
-<script src="app.js"></script>
+
+<!-- ============================================================ overview -->
+
+<template id="tpl-overview">
+  <div class="view">
+    <section class="hero">
+      <h2 data-slot="title"></h2>
+      <div data-slot="lede"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>The pieces</h3>
+        <p>Five containers. Click a box to read what it does.</p>
+      </div>
+
+      <!-- Positions are hand-placed to match the five containers in the compose file.
+           An auto-layout would be more general and much worse to look at. -->
+      <div class="diagram">
+        <svg viewBox="0 0 760 280" class="diagram-svg" role="img" aria-label="Architecture diagram">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--text-faint)"/>
+            </marker>
+          </defs>
+
+          <path class="edge" d="M210 88 L282 88" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="246" y="80" text-anchor="middle">~20 req/s</text>
+
+          <path class="edge" d="M540 100 L468 100" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="504" y="92" text-anchor="middle">scrape 5s</text>
+
+          <path class="edge edge-soft" d="M125 60 C125 12, 625 12, 625 54" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="375" y="22" text-anchor="middle">pushes its own measurements</text>
+
+          <path class="edge" d="M255 200 L340 124" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="266" y="170" text-anchor="start">injects faults</text>
+
+          <path class="edge edge-soft" d="M335 222 L538 128" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="472" y="198" text-anchor="middle">queries</text>
+
+          <path class="edge edge-soft" d="M625 200 L625 124" marker-end="url(#arrow)"/>
+          <text class="edge-label" x="634" y="166" text-anchor="start">queries</text>
+
+          <g class="node node-client" data-node="loadgen" role="button" tabindex="0">
+            <rect x="40" y="60" width="170" height="56" rx="10"/>
+            <text class="node-name" x="54" y="84">loadgen</text>
+            <text class="node-role" x="54" y="102">client · k6</text>
+          </g>
+          <g class="node node-service" data-node="checkout-api" role="button" tabindex="0">
+            <rect x="290" y="60" width="170" height="56" rx="10"/>
+            <text class="node-name" x="304" y="84">checkout-api</text>
+            <text class="node-role" x="304" y="102">service · :8080</text>
+          </g>
+          <g class="node node-infra" data-node="prometheus" role="button" tabindex="0">
+            <rect x="540" y="60" width="170" height="56" rx="10"/>
+            <text class="node-name" x="554" y="84">prometheus</text>
+            <text class="node-role" x="554" y="102">infra · :9090</text>
+          </g>
+          <g class="node node-infra" data-node="console" role="button" tabindex="0">
+            <rect x="165" y="200" width="170" height="56" rx="10"/>
+            <text class="node-name" x="179" y="224">console</text>
+            <text class="node-role" x="179" y="242">infra · :8090</text>
+          </g>
+          <g class="node node-infra" data-node="grafana" role="button" tabindex="0">
+            <rect x="540" y="200" width="170" height="56" rx="10"/>
+            <text class="node-name" x="554" y="224">grafana</text>
+            <text class="node-role" x="554" y="242">infra · :3000</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="component-list" data-slot="components"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>What happens to one request</h3>
+        <p>From a pretend customer to a number you can make a decision with.</p>
+      </div>
+      <ol class="journey" data-slot="journey"></ol>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>What normal looks like</h3>
+        <p>Nothing is broken unless you break it. These are the numbers to compare against.</p>
+      </div>
+      <div class="facts" data-slot="facts"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>The words</h3>
+        <p>Each term twice: what it means in general, and what it is concretely here.</p>
+      </div>
+      <div class="terms" data-slot="terms"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Where each fault bites</h3>
+        <p>The useful column is the second one: what the fault does <em>not</em> show up in.</p>
+      </div>
+      <div class="injections" data-slot="injections"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Why it is built this way</h3>
+        <p>The reasoning behind the numbers on the control room.</p>
+      </div>
+      <div class="topics" data-slot="topics"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Every query</h3>
+        <p>Paste any of these into Prometheus and you get the same number this page shows.</p>
+      </div>
+      <div class="query-list" data-slot="queries"></div>
+    </section>
+  </div>
+</template>
+
+<template id="tpl-component">
+  <details class="component">
+    <summary>
+      <span class="dot"></span>
+      <span class="component-name"></span>
+      <span class="component-role"></span>
+      <span class="pill pill-quiet component-image"></span>
+    </summary>
+    <div class="component-body">
+      <div data-slot="detail"></div>
+      <div class="emits" hidden>
+        <span class="emits-label">emits</span>
+        <span data-slot="metrics"></span>
+      </div>
+    </div>
+  </details>
+</template>
+
+<template id="tpl-journey-step">
+  <li class="journey-step">
+    <div class="journey-n"></div>
+    <div class="journey-body">
+      <div class="journey-head">
+        <span class="journey-title"></span>
+        <span class="pill pill-quiet"><span class="dot"></span><span class="journey-where"></span></span>
+      </div>
+      <p class="journey-detail"></p>
+    </div>
+  </li>
+</template>
+
+<template id="tpl-fact">
+  <div class="fact">
+    <div class="fact-label"></div>
+    <div class="fact-value"></div>
+    <div class="fact-note"></div>
+  </div>
+</template>
+
+<template id="tpl-term">
+  <div class="term">
+    <div class="term-name"></div>
+    <div class="term-plain"></div>
+    <div class="term-here"><span class="term-here-label">here</span><span class="term-here-text"></span></div>
+  </div>
+</template>
+
+<template id="tpl-injection">
+  <div class="injection">
+    <div class="injection-head"></div>
+    <div class="injection-where"></div>
+    <p class="injection-effect"></p>
+    <div class="injection-cols">
+      <div>
+        <div class="injection-col-label injection-visible">shows up in</div>
+        <ul data-slot="visible"></ul>
+      </div>
+      <div>
+        <div class="injection-col-label injection-invisible">invisible to</div>
+        <ul data-slot="invisible"></ul>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-topic">
+  <details class="topic">
+    <summary></summary>
+    <div class="topic-body" data-slot="body"></div>
+  </details>
+</template>
+
+<template id="tpl-query-item">
+  <details class="query-item">
+    <summary>
+      <span class="query-name"></span>
+      <span class="pill pill-quiet query-target" hidden></span>
+    </summary>
+    <div class="query-body">
+      <p class="query-spec"></p>
+      <p class="query-why"></p>
+      <pre class="promql"></pre>
+    </div>
+  </details>
+</template>
+
+
+<!-- ============================================================ control room -->
+
+<template id="tpl-control">
+  <div class="view">
+    <div class="banner" data-slot="banner" hidden>
+      <span class="banner-dot"></span>
+      <span class="banner-text"></span>
+    </div>
+
+    <div class="tiles" data-slot="tiles"></div>
+
+    <div class="control-grid">
+      <section class="panel">
+        <div class="panel-head panel-head-row">
+          <div>
+            <h3>History</h3>
+            <p>Shaded bands are stretches when a fault was active.</p>
+          </div>
+          <div class="window-picker" data-slot="windows"></div>
+        </div>
+        <div class="metric-picker" data-slot="metrics"></div>
+        <div data-slot="chart"></div>
+        <details class="explain">
+          <summary>The query behind this line</summary>
+          <div class="explain-body">
+            <p class="chart-why"></p>
+            <pre class="promql chart-query"></pre>
+          </div>
+        </details>
+      </section>
+
+      <div class="side-column">
+        <section class="panel">
+          <div class="panel-head"><h3>Break it</h3><p>Every fault expires on its own.</p></div>
+          <div class="segmented" data-slot="fault-types"></div>
+          <div data-slot="fault-form"></div>
+          <div class="danger-row">
+            <div>
+              <strong>Crash the process</strong>
+              <p>No TTL and nothing to undo. It restarts with its counters at zero and its own metrics
+              simply stop — while the client-side line keeps measuring.</p>
+            </div>
+            <button class="btn btn-sm btn-danger" data-slot="crash">Crash</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head panel-head-row">
+            <div>
+              <h3>Scenarios</h3>
+              <p>Read the hypothesis, predict the outcome, then run it.</p>
+            </div>
+          </div>
+          <div class="scenario-list" data-slot="scenarios"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head panel-head-row">
+            <h3>Active faults</h3>
+            <button class="btn btn-sm btn-warn" data-slot="clear">Clear all</button>
+          </div>
+          <div data-slot="active-faults"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h3>Event log</h3><p>What you did, and when it wore off.</p></div>
+          <div data-slot="events"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-tile">
+  <div class="tile">
+    <div class="tile-name"></div>
+    <div class="tile-metric">
+      <span class="tile-value">—</span>
+      <span class="tile-unit"></span>
+    </div>
+    <div class="tile-hint"></div>
+  </div>
+</template>
+
+<template id="tpl-chip">
+  <button class="chip"></button>
+</template>
+
+<template id="tpl-seg">
+  <button class="seg"></button>
+</template>
+
+<template id="tpl-fault-form">
+  <div>
+    <p class="fault-what"></p>
+    <div class="fault-fields" data-slot="fields"></div>
+    <details class="explain">
+      <summary>What it teaches</summary>
+      <div class="explain-body"><p class="fault-teaches"></p></div>
+    </details>
+    <button class="btn btn-primary btn-block" data-slot="inject">Inject</button>
+  </div>
+</template>
+
+<template id="tpl-field-range">
+  <div class="fault-field">
+    <div class="fault-field-row">
+      <label></label>
+      <span class="fault-field-value"></span>
+    </div>
+    <input type="range">
+    <div class="fault-field-help"></div>
+  </div>
+</template>
+
+<template id="tpl-field-number">
+  <div class="fault-field">
+    <div class="fault-field-row">
+      <label></label>
+      <input type="number">
+    </div>
+    <div class="fault-field-help"></div>
+  </div>
+</template>
+
+<template id="tpl-fault-row">
+  <div class="fault-row">
+    <div class="fault-row-main">
+      <div class="fault-row-title"><span class="fault-row-type"></span><span class="fault-row-id"></span></div>
+      <div class="fault-row-detail"></div>
+      <div class="ttl-bar"><span></span></div>
+    </div>
+    <div class="fault-row-right">
+      <div class="fault-ttl"></div>
+      <button class="btn btn-sm">Remove</button>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-event">
+  <div class="event">
+    <span class="event-time"></span>
+    <span class="event-text"></span>
+    <span class="event-ref"></span>
+  </div>
+</template>
+
+<template id="tpl-scenario">
+  <div class="scenario-item">
+    <div class="scenario-item-head">
+      <span class="scenario-name"></span>
+      <span class="pill pill-quiet scenario-duration"></span>
+    </div>
+    <details class="explain">
+      <summary>Hypothesis and what to watch</summary>
+      <div class="explain-body">
+        <p class="scenario-hypothesis"></p>
+        <p class="scenario-watch"></p>
+        <ul class="scenario-injects" data-slot="injects"></ul>
+      </div>
+    </details>
+    <button class="btn btn-sm btn-primary btn-block scenario-run">Run</button>
+  </div>
+</template>
+
+<template id="tpl-li">
+  <li></li>
+</template>
+
+<template id="tpl-code">
+  <code></code>
+</template>
+
+<template id="tpl-empty">
+  <div class="empty-state"></div>
+</template>
+
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

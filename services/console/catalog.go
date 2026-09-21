@@ -61,6 +61,7 @@ type topic struct {
 }
 
 type catalog struct {
+	Overview  overview    `json:"overview"`
 	Signals   []signalDef `json:"signals"`
 	Budgets   []signalDef `json:"budgets"`
 	Faults    []faultDef  `json:"faults"`
@@ -88,6 +89,7 @@ sum(rate(http_request_duration_seconds_count{job="$JOB"}[$W]))`
 
 func buildCatalog() catalog {
 	return catalog{
+		Overview: buildOverview(),
 		SLO: sloInfo{
 			AvailabilityTarget: availabilityTarget,
 			LatencyTarget:      latencyTarget,
@@ -308,14 +310,6 @@ func buildCatalog() catalog {
 			},
 		},
 		Topics: []topic{
-			{
-				Title: "What you are looking at",
-				Body: []string{
-					"checkout-api serves synthetic traffic from a k6 load generator at about 20 requests per second, 2% of which are deliberately invalid and come back as 400s.",
-					"Prometheus scrapes the service every 5 seconds. Every number on this page is a PromQL query against that data — each card shows you the exact query it ran.",
-					"Nothing here fails by accident. Faults are injected through an API, fire with a probability, and expire on their own.",
-				},
-			},
 			{
 				Title: "SLI, SLO, error budget",
 				Body: []string{
