@@ -53,7 +53,14 @@ export class ControlView {
       faultForm: view.querySelector('[data-slot="fault-form"]'),
       activeFaults: view.querySelector('[data-slot="active-faults"]'),
       events: view.querySelector('[data-slot="events"]'),
+      panes: [...view.querySelectorAll('[data-pane]')],
+      tabs: [...view.querySelectorAll('[data-tab]')],
     };
+
+    // The four control panels used to stack, which made the column taller than the
+    // screen. Only one of them is ever needed at a time, and tabbing between them keeps
+    // the chart in view while you break things.
+    this.refs.tabs.forEach((tab) => tab.addEventListener('click', () => this.showTab(tab.dataset.tab)));
 
     root.replaceChildren(view);
     this.root = root;
@@ -66,6 +73,11 @@ export class ControlView {
     this.renderBanner();
     this.applySummary(this.values);
     this.refreshChart();
+  }
+
+  showTab(name) {
+    this.refs.tabs.forEach((t) => t.classList.toggle('tab-on', t.dataset.tab === name));
+    this.refs.panes.forEach((p) => { p.hidden = p.dataset.pane !== name; });
   }
 
   unmount() {

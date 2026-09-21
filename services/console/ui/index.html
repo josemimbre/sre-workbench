@@ -18,11 +18,6 @@
     </div>
   </div>
 
-  <nav class="nav">
-    <button class="nav-item" data-view="overview" title="What is running here">Overview</button>
-    <button class="nav-item" data-view="control" title="Watch it and break it">Control room</button>
-  </nav>
-
   <div class="topbar-right">
     <span class="pill" id="pill-alerts" hidden></span>
     <span class="pill" id="pill-faults" hidden></span>
@@ -38,12 +33,28 @@
   <span class="subbar-updated">updated <span id="pill-updated">—</span></span>
 </div>
 
-<main id="view"></main>
+<div class="shell">
+  <aside class="sidebar">
+    <nav class="sidebar-inner" id="sidebar"></nav>
+  </aside>
+  <main id="view"></main>
+</div>
 
 <div id="toasts" class="toasts"></div>
 
 
 <!-- ============================================================ overview -->
+
+<template id="tpl-nav-group">
+  <div class="nav-group">
+    <button class="nav-item"></button>
+    <div class="nav-sections"></div>
+  </div>
+</template>
+
+<template id="tpl-nav-section">
+  <button class="nav-section"></button>
+</template>
 
 <template id="tpl-overview">
   <div class="view">
@@ -52,7 +63,7 @@
       <div data-slot="lede"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="sec-pieces">
       <div class="panel-head">
         <h3>The pieces</h3>
         <p>Five containers. Click a box to read what it does.</p>
@@ -127,7 +138,7 @@
       <div class="component-list" data-slot="components"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="sec-request">
       <div class="panel-head">
         <h3>What happens to one request</h3>
         <p>From a pretend customer to a number you can make a decision with.</p>
@@ -135,7 +146,7 @@
       <ol class="journey" data-slot="journey"></ol>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="sec-normal">
       <div class="panel-head">
         <h3>What normal looks like</h3>
         <p>Nothing is broken unless you break it. These are the numbers to compare against.</p>
@@ -143,7 +154,7 @@
       <div class="facts" data-slot="facts"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="sec-words">
       <div class="panel-head">
         <h3>The words</h3>
         <p>Each term twice: what it means in general, and what it is concretely here.</p>
@@ -151,7 +162,7 @@
       <div class="terms" data-slot="terms"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="sec-faults">
       <div class="panel-head">
         <h3>Where each fault bites</h3>
         <p>The useful column is the second one: what the fault does <em>not</em> show up in.</p>
@@ -159,7 +170,7 @@
       <div class="injections" data-slot="injections"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="sec-why">
       <div class="panel-head">
         <h3>Why it is built this way</h3>
         <p>The reasoning behind the numbers on the control room.</p>
@@ -167,7 +178,7 @@
       <div class="topics" data-slot="topics"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="sec-queries">
       <div class="panel-head">
         <h3>Every query</h3>
         <p>Paste any of these into Prometheus and you get the same number this page shows.</p>
@@ -276,7 +287,7 @@
 
     <div class="tiles" data-slot="tiles"></div>
 
-    <section class="panel">
+    <section class="panel" id="sec-alerts">
       <div class="panel-head panel-head-row">
         <div>
           <h3>Alerts</h3>
@@ -296,7 +307,7 @@
     </section>
 
     <div class="control-grid">
-      <section class="panel">
+      <section class="panel" id="sec-history">
         <div class="panel-head panel-head-row">
           <div>
             <h3>History</h3>
@@ -315,43 +326,45 @@
         </details>
       </section>
 
-      <div class="side-column">
-        <section class="panel">
-          <div class="panel-head"><h3>Break it</h3><p>Every fault expires on its own.</p></div>
+      <section class="panel side-panel" id="sec-controls">
+        <div class="tabs" data-slot="tabs">
+          <button class="tab tab-on" data-tab="faults">Break it</button>
+          <button class="tab" data-tab="scenarios">Scenarios</button>
+          <button class="tab" data-tab="log">Log</button>
+        </div>
+
+        <div class="tab-pane" data-pane="faults">
+          <p class="pane-hint">Every fault is scoped, probabilistic and expires on its own.</p>
           <div class="segmented" data-slot="fault-types"></div>
           <div data-slot="fault-form"></div>
           <div class="danger-row">
             <div>
               <strong>Crash the process</strong>
-              <p>No TTL and nothing to undo. It restarts with its counters at zero and its own metrics
-              simply stop — while the client-side line keeps measuring.</p>
+              <p>No TTL and nothing to undo. It restarts with its counters at zero and its own
+              metrics simply stop — while the client-side line keeps measuring.</p>
             </div>
             <button class="btn btn-sm btn-danger" data-slot="crash">Crash</button>
           </div>
-        </section>
 
-        <section class="panel">
-          <div class="panel-head panel-head-row">
-            <div>
-              <h3>Scenarios</h3>
-              <p>Read the hypothesis, predict the outcome, then run it.</p>
+          <div class="pane-section">
+            <div class="pane-section-head">
+              <h4>Active</h4>
+              <button class="btn btn-sm btn-warn" data-slot="clear">Clear all</button>
             </div>
+            <div data-slot="active-faults"></div>
           </div>
+        </div>
+
+        <div class="tab-pane" data-pane="scenarios" hidden>
+          <p class="pane-hint">Read the hypothesis, predict the outcome, then run it.</p>
           <div class="scenario-list" data-slot="scenarios"></div>
-        </section>
+        </div>
 
-        <section class="panel">
-          <div class="panel-head panel-head-row">
-            <h3>Active faults</h3>
-            <button class="btn btn-sm btn-warn" data-slot="clear">Clear all</button>
-          </div>
-          <div data-slot="active-faults"></div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head"><h3>Event log</h3><p>What you did, and when it wore off.</p></div>
+        <div class="tab-pane" data-pane="log" hidden>
+          <p class="pane-hint">What you did, and when it wore off.</p>
           <div data-slot="events"></div>
-        </section>
+        </div>
+      </section>
       </div>
     </div>
   </div>

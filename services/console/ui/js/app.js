@@ -7,7 +7,32 @@ import { clone, mount } from './dom.js';
 import { renderOverview } from './views/overview.js';
 import { ControlView } from './views/control.js';
 
-const VIEWS = ['overview', 'control'];
+const VIEWS = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    sections: [
+      ['sec-pieces', 'The pieces'],
+      ['sec-request', 'One request'],
+      ['sec-normal', 'What normal looks like'],
+      ['sec-words', 'The words'],
+      ['sec-faults', 'Where faults bite'],
+      ['sec-why', 'Why it works this way'],
+      ['sec-queries', 'Every query'],
+    ],
+  },
+  {
+    id: 'control',
+    label: 'Control room',
+    sections: [
+      ['sec-alerts', 'Alerts'],
+      ['sec-history', 'History'],
+      ['sec-controls', 'Controls'],
+    ],
+  },
+];
+
+const viewIds = VIEWS.map((v) => v.id);
 
 const EVENTS_KEY = 'workbench.events';
 
@@ -20,6 +45,7 @@ const state = {
   knownFaultIds: new Set(),
   knownAlerts: new Set(),
   links: {},
+  scrollHandler: null,
   clockOffset: 0,
   events: loadEvents(),
   view: null,
@@ -152,15 +178,11 @@ function toast(message, kind = 'good') {
 }
 
 function setView(id) {
-  const view = VIEWS.includes(id) ? id : VIEWS[0];
+  const view = viewIds.includes(id) ? id : viewIds[0];
   if (state.view === view) return;
 
   if (control) control.unmount();
   state.view = view;
-
-  document.querySelectorAll('[data-view]').forEach((b) => {
-    b.classList.toggle('nav-on', b.dataset.view === view);
-  });
 
   const root = $('#view');
   if (view === 'control') {
@@ -170,6 +192,73 @@ function setView(id) {
     renderOverview(root, state.catalog);
   }
   window.scrollTo({ top: 0 });
+  renderSidebar();
+  watchSections();
+}
+
+// ---------------------------------------------------------------- sidebar
+
+function renderSidebar() {
+  mount($('#sidebar'), VIEWS.map((v) => {
+    const group = clone('tpl-nav-group', {
+      '.nav-item': {
+        text: v.label,
+        class: v.id === state.view ? 'nav-on' : [],
+        on: { click: () => { location.hash = `#/${v.id}`; } },
+      },
+    });
+    // Only the view you are in lists its sections: a menu that shows every anchor of
+    // every page is a table of contents, not navigation.
+    if (v.id === state.view) {
+      mount(group.querySelector('.nav-sections'), v.sections.map(([id, label]) => clone('tpl-nav-section', {
+        '': {
+          text: label,
+          data: { section: id },
+          on: {
+            click: () => {
+              const target = document.getElementById(id);
+              if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            },
+          },
+        },
+      })));
+    }
+    return group;
+  }));
+}
+
+// watchSections highlights whichever section is currently under the top of the viewport.
+// A scroll listener rather than IntersectionObserver: the rule here is "the last heading
+// you scrolled past", which is awkward to express as a set of intersection ratios.
+function watchSections() {
+  if (state.scrollHandler) window.removeEventListener('scroll', state.scrollHandler);
+
+  const sections = (VIEWS.find((v) => v.id === state.view) || VIEWS[0]).sections
+    .map(([id]) => document.getElementById(id))
+    .filter(Boolean);
+  if (!sections.length) return;
+
+  let queued = false;
+  const update = () => {
+    queued = false;
+    // 120px down from the top of the viewport, just below the sticky header.
+    const line = 120;
+    let current = sections[0];
+    for (const section of sections) {
+      if (section.getBoundingClientRect().top <= line) current = section;
+    }
+    document.querySelectorAll('[data-section]').forEach((b) => {
+      b.classList.toggle('nav-section-on', b.dataset.section === current.id);
+    });
+  };
+
+  state.scrollHandler = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(update);
+  };
+  window.addEventListener('scroll', state.scrollHandler, { passive: true });
+  update();
 }
 
 function routeFromHash() {
@@ -191,10 +280,6 @@ async function boot() {
   state.catalog = data.catalog;
   state.services = data.services;
   state.service = data.services[0];
-
-  document.querySelectorAll('[data-view]').forEach((b) => {
-    b.addEventListener('click', () => { location.hash = `#/${b.dataset.view}`; });
-  });
 
   const select = $('#service-select');
   mount(select, state.services.map((name) => {
