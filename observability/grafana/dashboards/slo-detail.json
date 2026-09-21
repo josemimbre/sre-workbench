@@ -632,7 +632,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "A rolling window of the total period (30d) error budget remaining.",
+      "description": "A rolling window of the total period (1h) error budget remaining. Negative means overspent: it is a balance, not a remainder. With an hour-long rolling window it recovers on its own as the errors age out.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -640,7 +640,6 @@
           },
           "mappings": [],
           "max": 1,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -649,12 +648,12 @@
                 "value": null
               },
               {
-                "color": "green",
-                "value": 0
+                "color": "orange",
+                "value": 0.0001
               },
               {
-                "color": "light-yellow",
-                "value": 0.4
+                "color": "green",
+                "value": 0.25
               }
             ]
           },
@@ -691,7 +690,7 @@
           "expr": "slo:period_error_budget_remaining:ratio{sloth_service=\"${service}\", sloth_slo=\"${slo}\"} or on() vector(1)",
           "instant": true,
           "interval": "",
-          "legendFormat": "Remaining error budget (30d window)",
+          "legendFormat": "Remaining error budget (1h window)",
           "queryType": "randomWalk",
           "refId": "A"
         }
