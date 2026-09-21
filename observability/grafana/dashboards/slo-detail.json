@@ -632,7 +632,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "A rolling window of the total period (1h) error budget remaining. Negative means overspent: it is a balance, not a remainder. With an hour-long rolling window it recovers on its own as the errors age out.",
+      "description": "A rolling window of the total period (1h) error budget remaining. Negative means overspent: it is a balance, not a remainder. It recovers, but not gradually \u2014 the window holds an incident at full weight for a whole hour and then releases it all at once, so a flat negative usually means the errors have not aged out yet rather than that they are still happening.",
       "fieldConfig": {
         "defaults": {
           "color": {

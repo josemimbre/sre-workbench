@@ -197,9 +197,13 @@ func buildCatalog() catalog {
 					"can spend. At nothing left, you stop shipping features and start fixing reliability. " +
 					"It reads as a balance, not a remainder, so overspending shows as 'over by' rather than " +
 					"stopping at zero — being slightly over and being over by triple are different " +
-					"conversations. And because the window rolls, an overdraft here heals itself: the " +
-					"errors age out the far end and the budget climbs back. A real 30-day budget does not " +
-					"do that, which is exactly why running out of one matters so much more.",
+					"conversations. " +
+					"An overdraft does heal here, but not gradually: a rolling window holds an incident at " +
+					"full weight for its whole length and only lets go when the incident crosses the far " +
+					"edge. So the budget sits flat for an hour after a blip and then climbs back in one " +
+					"go. If it looks stuck, it probably is not — check when the last bad request actually " +
+					"happened. A real 30-day budget behaves the same way over thirty days, which is " +
+					"exactly why running out of one matters so much more.",
 				Query:      `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="availability"}`,
 				Series:     `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="availability"}`,
 				Derivation: "1 - (slo:sli_error:ratio_rate1h / slo:error_budget:ratio), where the error budget is vector(1-0.99).",
