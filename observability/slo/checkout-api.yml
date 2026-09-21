@@ -9,8 +9,8 @@ labels:
   workbench: playground
 
 slos:
-  # See PLAN.md §6.1. Bad events are 5xx; a 4xx is a correct answer to an invalid
-  # request and deliberately does not count.
+  # Bad events are 5xx; a 4xx is a correct answer to an invalid request and
+  # deliberately does not count.
   - name: availability
     objective: 99.0
     description: >-
@@ -37,8 +37,8 @@ slos:
         labels:
           severity: ticket
 
-  # See PLAN.md §6.2. Bad events are requests slower than 300ms, counted as the total
-  # minus the le="0.3" bucket — a ratio of counts, never an estimated percentile.
+  # Bad events are requests slower than 300ms, counted as the total minus the le="0.3"
+  # bucket — a ratio of counts, never an estimated percentile.
   - name: latency
     objective: 95.0
     description: >-

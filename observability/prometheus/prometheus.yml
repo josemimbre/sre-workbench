@@ -14,7 +14,7 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 scrape_configs:
-  # The `job` label is what identifies a service in every SLI query (PLAN.md §6).
+  # The `job` label is what identifies a service in every SLI query.
   # Services never emit a `service` label of their own to avoid a relabel conflict.
   - job_name: checkout-api
     static_configs:

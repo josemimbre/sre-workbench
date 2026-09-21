@@ -1,3 +1,8 @@
+# Working notes, not part of the repo. PLAN.md is a scratch guide for whoever is
+# building this; anything in it that turns out to matter belongs in README.md, in a
+# code comment, or in the console's own explanations.
+PLAN.md
+
 # Binaries built locally
 services/checkout-api/checkout-api
 services/catalog-api/catalog-api

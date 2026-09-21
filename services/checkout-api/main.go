@@ -1,6 +1,6 @@
 // checkout-api is the entry point of the workbench: a write endpoint whose SLIs are
-// availability and latency (PLAN.md §6.1 and §6.2). It has no dependencies yet; what it
-// does have is a fault engine, so the SLIs can be broken on demand and watched.
+// availability and latency. It has no dependencies yet; what it does have is a fault
+// engine, so the SLIs can be broken on demand and watched.
 package main
 
 import (

@@ -7,7 +7,8 @@ import "github.com/josemimbre/sre-workbench/services/pkg/faults"
 // prove. The SLI queries live here too, so the console shows the user the exact PromQL
 // behind every figure it displays.
 
-// Playground SLO targets (PLAN.md §2: compressed time, 1h windows).
+// Playground SLO targets. The window is compressed to an hour so an experiment gives
+// feedback in minutes rather than weeks.
 const (
 	availabilityTarget = 0.99 // 1% error budget
 	latencyTarget      = 0.95 // 5% of requests may exceed the threshold

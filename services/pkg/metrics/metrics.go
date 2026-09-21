@@ -1,6 +1,6 @@
 // Package metrics provides the RED instrumentation (rate, errors, duration) shared by
-// every service in the workbench. The label set is chosen so the SLI queries in PLAN.md
-// work directly: the service identity comes from Prometheus' own `job` label, so the
+// every service in the workbench. The label set is chosen so the SLI queries work
+// directly: the service identity comes from Prometheus' own `job` label, so the
 // application never emits a conflicting one.
 package metrics
 
@@ -14,8 +14,8 @@ import (
 )
 
 // SLOBuckets deliberately contains the 300ms threshold of the checkout latency SLO.
-// The SLI is a ratio of buckets (see PLAN.md §6.2), so the threshold has to exist as a
-// bucket boundary or the number cannot be computed without interpolating.
+// The latency SLI is a ratio of buckets, so the threshold has to exist as a bucket
+// boundary or the number cannot be computed without interpolating.
 var SLOBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2, 5}
 
 // Metrics holds the RED instruments of a single service.

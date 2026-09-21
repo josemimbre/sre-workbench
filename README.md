@@ -1,7 +1,6 @@
 # SRE Workbench
 
 A local playground for designing, measuring and **deliberately breaking** SLIs and SLOs.
-The full plan lives in [PLAN.md](PLAN.md); this is just how to run it.
 
 Status: **phases 0–3 on one service** — RED metrics, deliberate faults, SLO recording
 rules, multi-window burn-rate alerts, and a console that explains and drives all of it.
