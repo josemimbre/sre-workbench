@@ -63,7 +63,7 @@ export class Chart {
     hi += pad;
     // A ratio never usefully goes above 100%, and pretending otherwise wastes half the
     // chart on empty space above a flat line at 1.
-    if (this.unit === 'ratio' && hi > 1) hi = 1 + (hi - 1) * 0.15;
+    if ((this.unit === 'ratio' || this.unit === 'budget') && hi > 1) hi = 1 + (hi - 1) * 0.15;
 
     const t0 = this.points[0][0];
     const t1 = this.points[this.points.length - 1][0];
@@ -219,6 +219,7 @@ function timeLabel(t) {
 
 function axisLabel(v, unit, step) {
   switch (unit) {
+    case 'budget':
     case 'ratio': {
       const decimals = Math.max(0, Math.min(3, Math.ceil(-Math.log10(Math.abs(step) * 100 || 1))));
       return `${(v * 100).toFixed(decimals)}%`;

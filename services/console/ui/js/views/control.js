@@ -187,6 +187,8 @@ export class ControlView {
       tile.value.textContent = text;
       tile.unit.textContent = unit;
       tile.node.dataset.status = statusOf(sig, v);
+      // A percent sign belongs against its number; a word after it does not.
+      tile.node.classList.toggle('tile-tight', unit.startsWith('%'));
     }
   }
 

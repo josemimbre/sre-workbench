@@ -168,14 +168,19 @@ func buildCatalog() catalog {
 		Budgets: []signalDef{
 			{
 				Key:  "availability_budget",
-				Name: "Availability budget left",
+				Name: "Availability budget",
 				Spec: "How much of the 1% error budget is still unspent in the last hour.",
 				Why: "The budget is the whole point: it turns 'is the service healthy?' into a number you " +
-					"can spend. At 0% left, you stop shipping features and start fixing reliability.",
+					"can spend. At nothing left, you stop shipping features and start fixing reliability. " +
+					"It reads as a balance, not a remainder, so overspending shows as 'over by' rather than " +
+					"stopping at zero — being slightly over and being over by triple are different " +
+					"conversations. And because the window rolls, an overdraft here heals itself: the " +
+					"errors age out the far end and the budget climbs back. A real 30-day budget does not " +
+					"do that, which is exactly why running out of one matters so much more.",
 				Query:      `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="availability"}`,
 				Series:     `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="availability"}`,
 				Derivation: "1 - (slo:sli_error:ratio_rate1h / slo:error_budget:ratio), where the error budget is vector(1-0.99).",
-				Unit:       "ratio",
+				Unit:       "budget",
 			},
 			{
 				Key:  "availability_burn",
@@ -190,14 +195,16 @@ func buildCatalog() catalog {
 				Invert:     true,
 			},
 			{
-				Key:        "latency_budget",
-				Name:       "Latency budget left",
-				Spec:       "How much of the 5% slow-request budget is still unspent in the last hour.",
-				Why:        "Latency has its own budget. A service can be 100% available and still be out of budget.",
+				Key:  "latency_budget",
+				Name: "Latency budget",
+				Spec: "How much of the 5% slow-request budget is still unspent in the last hour.",
+				Why: "Latency has its own budget. A service can be 100% available and still be out of " +
+					"budget. Like the availability one, it is a balance: it goes negative when overspent " +
+					"and recovers on its own as the hour rolls forward.",
 				Query:      `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="latency"}`,
 				Series:     `slo:period_error_budget_remaining:ratio{sloth_service="$JOB", sloth_slo="latency"}`,
 				Derivation: "Same shape as availability, with bad events counted as requests slower than 300ms.",
-				Unit:       "ratio",
+				Unit:       "budget",
 			},
 			{
 				Key:        "latency_burn",

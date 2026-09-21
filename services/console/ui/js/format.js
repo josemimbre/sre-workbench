@@ -13,6 +13,12 @@ export function formatValue(v, unit, { compact = false } = {}) {
   if (v === null || v === undefined || Number.isNaN(v)) return { text: '—', unit: '' };
   switch (unit) {
     case 'ratio': return { text: (v * 100).toFixed(compact ? 1 : 2), unit: '%' };
+    // A budget is a balance, not a remainder. Spending more than the allowance is a
+    // real state with a magnitude worth reading, so it is shown as an overdraft rather
+    // than clamped at zero — slightly over and over by triple are different problems.
+    case 'budget': return v < 0
+      ? { text: (Math.abs(v) * 100).toFixed(0), unit: '% over' }
+      : { text: (v * 100).toFixed(1), unit: '% left' };
     case 'rps': return { text: v.toFixed(1), unit: 'req/s' };
     case 'rate': return { text: v.toFixed(2), unit: '× budget' };
     case 'seconds': return v < 1
@@ -33,7 +39,7 @@ export function formatCompact(v, unit) {
 // a window is in trouble even if nothing is failing at this instant.
 export function statusOf(sig, v) {
   if (v === null || v === undefined || Number.isNaN(v)) return 'none';
-  if (sig.key === 'availability_budget' || sig.key === 'latency_budget') {
+  if (sig.unit === 'budget') {
     if (v <= 0) return 'bad';
     return v < 0.25 ? 'warn' : 'good';
   }

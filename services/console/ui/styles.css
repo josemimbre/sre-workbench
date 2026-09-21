@@ -258,6 +258,7 @@ pre.promql {
 .tile[data-status="bad"]  { border-left-color: var(--bad); }
 .tile-name { font-size: 12px; color: var(--text-dim); }
 .tile-metric { display: flex; align-items: baseline; gap: 7px; margin: 6px 0 2px; font-family: var(--mono); }
+.tile-tight .tile-metric { gap: 2px; }
 .tile-value { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .tile[data-status="good"] .tile-value { color: var(--good); }
 .tile[data-status="warn"] .tile-value { color: var(--warn); }
