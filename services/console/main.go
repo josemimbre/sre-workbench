@@ -63,6 +63,7 @@ func main() {
 	mux.HandleFunc("GET /api/summary", srv.handleSummary)
 	mux.HandleFunc("GET /api/series", srv.handleSeries)
 	mux.HandleFunc("GET /api/annotations", srv.handleAnnotations)
+	mux.HandleFunc("GET /api/burnrate", srv.handleBurnRate)
 	mux.HandleFunc("GET /api/alerts", srv.handleAlerts)
 	// Alertmanager posts here; it is not part of the browser-facing API.
 	mux.HandleFunc("POST /api/alerts", srv.handleAlertWebhook)
@@ -231,6 +232,57 @@ func (s *server) handleAnnotations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"spans": spans})
+}
+
+// handleBurnRate returns the burn rate of one SLO over every window its alerts evaluate.
+// Each line is the same ratio Sloth's current_burn_rate uses, just held at a different
+// window length, so the chart shows the exact quantities the alert rules compare.
+func (s *server) handleBurnRate(w http.ResponseWriter, r *http.Request) {
+	slo := r.URL.Query().Get("slo")
+	if slo == "" {
+		slo = "availability"
+	}
+	job := s.job(r)
+	minutes := intParam(r, "minutes", 30, 1, 360)
+	step := max(minutes*60/120, 5)
+
+	type windowSeries struct {
+		Window string  `json:"window"`
+		Points []point `json:"points"`
+	}
+
+	out := make([]windowSeries, len(s.catalog.BurnWindows))
+	errs := make([]error, len(s.catalog.BurnWindows))
+
+	var wg sync.WaitGroup
+	for i, window := range s.catalog.BurnWindows {
+		wg.Add(1)
+		go func(i int, window string) {
+			defer wg.Done()
+			query := fmt.Sprintf(
+				`slo:sli_error:ratio_rate%s{sloth_service=%q, sloth_slo=%q}`+
+					` / on(sloth_id, sloth_slo, sloth_service) group_left`+
+					` slo:error_budget:ratio{sloth_service=%q, sloth_slo=%q}`,
+				window, job, slo, job, slo)
+			points, err := s.prom.rangeQuery(r.Context(), query, minutes, step)
+			out[i] = windowSeries{Window: window, Points: points}
+			errs[i] = err
+		}(i, window)
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, apiError{err.Error()})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"slo":        slo,
+		"windows":    out,
+		"thresholds": s.catalog.BurnThresholds,
+	})
 }
 
 func (s *server) lookupSignal(key string) (signalDef, bool) {

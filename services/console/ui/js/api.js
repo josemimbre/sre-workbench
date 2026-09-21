@@ -28,6 +28,9 @@ export const api = {
   // What Prometheus has pending or firing, plus what Alertmanager delivered here.
   alerts: () => request('/api/alerts'),
 
+  // Every window the alert rules evaluate, in one call.
+  burnRate: (job, slo, minutes) => request(`/api/burnrate?${qs({ job, slo, minutes })}`),
+
   faults: (service) => request(`/api/faults?${qs({ service })}`),
 
   injectFault: (service, fault) => request(`/api/faults?${qs({ service })}`, {

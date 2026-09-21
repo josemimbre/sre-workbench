@@ -64,6 +64,14 @@ type topic struct {
 	Body  []string `json:"body"`
 }
 
+// burnThreshold is one of the four alert rules, as a line to draw on the burn-rate chart.
+type burnThreshold struct {
+	Rate     float64 `json:"rate"`
+	Severity string  `json:"severity"`
+	Long     string  `json:"long_window"`
+	Short    string  `json:"short_window"`
+}
+
 type catalog struct {
 	Overview  overview    `json:"overview"`
 	Signals   []signalDef `json:"signals"`
@@ -72,6 +80,12 @@ type catalog struct {
 	Scenarios []scenario  `json:"scenarios"`
 	Topics    []topic     `json:"topics"`
 	SLO       sloInfo     `json:"slo"`
+
+	// The windows the alerts evaluate, and the burn rates they compare against. Drawing
+	// all of them on one chart is what makes a multi-window rule legible: you can see
+	// which window crossed which line, and why one alert fired and another did not.
+	BurnWindows    []string        `json:"burn_windows"`
+	BurnThresholds []burnThreshold `json:"burn_thresholds"`
 }
 
 type sloInfo struct {
@@ -94,6 +108,15 @@ sum(rate(http_request_duration_seconds_count{job="$JOB"}[$W]))`
 func buildCatalog() catalog {
 	return catalog{
 		Overview: buildOverview(),
+
+		// Must match observability/slo/windows/1h.yaml.
+		BurnWindows: []string{"1m", "2m", "5m", "10m", "15m", "30m"},
+		BurnThresholds: []burnThreshold{
+			{Rate: 14.4, Severity: "page", Long: "2m", Short: "1m"},
+			{Rate: 6, Severity: "page", Long: "5m", Short: "2m"},
+			{Rate: 3, Severity: "ticket", Long: "15m", Short: "5m"},
+			{Rate: 1, Severity: "ticket", Long: "30m", Short: "10m"},
+		},
 		SLO: sloInfo{
 			AvailabilityTarget: availabilityTarget,
 			LatencyTarget:      latencyTarget,

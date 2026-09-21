@@ -9,6 +9,19 @@ import { formatValue, statusOf, humanSeconds, clockTime } from '../format.js';
 
 const TILES = ['availability', 'latency', 'availability_budget', 'availability_burn'];
 const CHARTABLE = ['availability', 'latency', 'availability_budget', 'availability_burn', 'latency_budget', 'latency_burn', 'throughput', 'p99', 'inflight'];
+
+// Not a signal but a view: every window the alerts evaluate, on one pair of axes.
+const BURN_VIEW = {
+  key: 'burn_windows',
+  name: 'Burn rate · all windows',
+  unit: 'rate',
+  why: 'Each line is the same error ratio measured over a different window, divided by the error '
+    + 'budget. The dashed lines are the four burn rates the alerts compare against. An alert fires '
+    + 'only when its long and short windows are both above its line — which is why you can watch a '
+    + 'spike push the 1m line over 14.4 and still see nothing page if it passes before the 2m line '
+    + 'catches up.',
+  query: 'slo:sli_error:ratio_rate<window> / slo:error_budget:ratio, for each alert window',
+};
 const WINDOWS = [15, 30, 60];
 
 export class ControlView {
@@ -27,6 +40,7 @@ export class ControlView {
   }
 
   signal(key) {
+    if (key === BURN_VIEW.key) return BURN_VIEW;
     return [...this.ctx.catalog.signals, ...this.ctx.catalog.budgets].find((s) => s.key === key);
   }
 
@@ -122,7 +136,7 @@ export class ControlView {
   }
 
   buildMetricChips() {
-    return CHARTABLE.map((key) => {
+    return [...CHARTABLE, BURN_VIEW.key].map((key) => {
       const sig = this.signal(key);
       if (!sig) return null;
       return clone('tpl-chip', {
@@ -344,6 +358,21 @@ export class ControlView {
     this.refs.chartQuery.textContent = sig.query;
 
     try {
+      if (this.chartKey === BURN_VIEW.key) {
+        const [burn, annotations] = await Promise.all([
+          api.burnRate(this.ctx.service(), 'availability', this.windowMinutes),
+          api.annotations(this.ctx.service(), this.windowMinutes),
+        ]);
+        this.chart.setSeries({
+          series: burn.windows.map((w) => ({ label: w.window, points: w.points })),
+          spans: annotations.spans,
+          thresholds: burn.thresholds.map((t) => ({ value: t.rate, label: `${t.severity} ${t.rate}×` })),
+          unit: 'rate',
+          target: null,
+        });
+        return;
+      }
+
       const [series, annotations] = await Promise.all([
         api.series(this.chartKey, this.ctx.service(), this.windowMinutes),
         api.annotations(this.ctx.service(), this.windowMinutes),

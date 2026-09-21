@@ -12,10 +12,12 @@ export class Chart {
     this.height = height;
     this.unit = unit;
     this.target = target;
-    this.points = [];
+    // Every chart is a list of series; a single line is just a list of one. Burn rate
+    // needs six at once, one per window the alerts evaluate.
+    this.series = [];
     this.spans = [];
+    this.thresholds = [];
     this.status = 'plain';
-    this.hoverIndex = null;
 
     this.container.classList.add('chart');
     this.container.innerHTML = '<div class="chart-empty">loading…</div>';
@@ -29,9 +31,26 @@ export class Chart {
   }
 
   setData({ points, spans, status, unit, target }) {
-    this.points = (points || []).filter((p) => p[0] !== null);
-    this.spans = spans || [];
     if (status) this.status = status;
+    this.setSeries({
+      series: [{ label: '', points, color: STATUS_COLOR[this.status] || STATUS_COLOR.plain }],
+      spans,
+      unit,
+      target,
+      thresholds: [],
+    });
+  }
+
+  // setSeries draws several lines on one pair of axes, with optional horizontal
+  // threshold markers — which is how the burn-rate view makes the multi-window alert
+  // rules visible: you can see which windows crossed which line, and when.
+  setSeries({ series, spans, unit, target, thresholds }) {
+    this.series = (series || []).map((s) => ({
+      ...s,
+      points: (s.points || []).filter((p) => p[0] !== null),
+    })).filter((s) => s.points.length);
+    this.spans = spans || [];
+    this.thresholds = thresholds || [];
     if (unit) this.unit = unit;
     this.target = target === undefined ? this.target : target;
     this.render();
@@ -41,7 +60,7 @@ export class Chart {
     const width = Math.max(this.container.clientWidth, 320);
     const height = this.height;
 
-    const usable = this.points.filter((p) => p[1] !== null);
+    const usable = this.series.flatMap((s) => s.points.filter((p) => p[1] !== null));
     if (usable.length < 2) {
       this.container.innerHTML = '<div class="chart-empty">not enough samples in this window yet</div>';
       return;
@@ -53,6 +72,10 @@ export class Chart {
     const values = usable.map((p) => p[1]);
     let lo = Math.min(...values);
     let hi = Math.max(...values);
+    for (const t of this.thresholds) {
+      lo = Math.min(lo, t.value);
+      hi = Math.max(hi, t.value);
+    }
     if (this.target !== null && this.target !== undefined) {
       lo = Math.min(lo, this.target);
       hi = Math.max(hi, this.target);
@@ -65,8 +88,9 @@ export class Chart {
     // chart on empty space above a flat line at 1.
     if ((this.unit === 'ratio' || this.unit === 'budget') && hi > 1) hi = 1 + (hi - 1) * 0.15;
 
-    const t0 = this.points[0][0];
-    const t1 = this.points[this.points.length - 1][0];
+    const times = this.series.flatMap((s) => s.points.map((p) => p[0]));
+    const t0 = Math.min(...times);
+    const t1 = Math.max(...times);
 
     const x = (t) => MARGIN.left + (t1 === t0 ? plotW : ((t - t0) / (t1 - t0)) * plotW);
     const y = (v) => MARGIN.top + plotH - ((v - lo) / (hi - lo)) * plotH;
@@ -95,14 +119,28 @@ export class Chart {
                 width="${bw.toFixed(1)}" height="${plotH}"/>`;
     }).join('');
 
-    let line = '';
-    let open = false;
-    for (const [t, v] of this.points) {
-      if (v === null) { open = false; continue; }
-      line += `${open ? 'L' : 'M'}${x(t).toFixed(1)} ${y(v).toFixed(1)}`;
-      open = true;
-    }
-    const area = `${line}L${x(t1).toFixed(1)} ${(MARGIN.top + plotH).toFixed(1)}L${x(t0).toFixed(1)} ${(MARGIN.top + plotH).toFixed(1)}Z`;
+    const single = this.series.length === 1;
+    const drawn = this.series.map((serie, i) => {
+      const color = serie.color || SERIES_COLORS[i % SERIES_COLORS.length];
+      let line = '';
+      let open = false;
+      for (const [t, v] of serie.points) {
+        if (v === null) { open = false; continue; }
+        line += `${open ? 'L' : 'M'}${x(t).toFixed(1)} ${y(v).toFixed(1)}`;
+        open = true;
+      }
+      // Only a lone line gets a filled area; six of them stacked would be mud.
+      const area = single
+        ? `${line}L${x(t1).toFixed(1)} ${(MARGIN.top + plotH).toFixed(1)}L${x(t0).toFixed(1)} ${(MARGIN.top + plotH).toFixed(1)}Z`
+        : '';
+      return { ...serie, color, line, area };
+    });
+
+    const thresholdLines = this.thresholds.map((t) => `
+      <line class="threshold" x1="${MARGIN.left}" x2="${width - MARGIN.right}"
+            y1="${y(t.value).toFixed(1)}" y2="${y(t.value).toFixed(1)}"/>
+      <text class="axis threshold-label" x="${width - MARGIN.right - 2}" y="${(y(t.value) - 4).toFixed(1)}"
+            text-anchor="end">${t.label}</text>`).join('');
 
     const targetLine = (this.target !== null && this.target !== undefined) ? `
       <line class="target" x1="${MARGIN.left}" x2="${width - MARGIN.right}"
@@ -122,61 +160,77 @@ export class Chart {
         ${gridY}
         ${gridX}
         ${targetLine}
-        <path d="${area}" fill="url(#${gradId})"/>
-        <path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+        ${thresholdLines}
+        ${drawn.map((s) => s.area ? `<path d="${s.area}" fill="url(#${gradId})"/>` : '').join('')}
+        ${drawn.map((s) => `<path d="${s.line}" fill="none" stroke="${s.color}" stroke-width="${single ? 1.8 : 1.4}"
+          stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
         <g class="hover-layer" opacity="0">
           <line class="crosshair" y1="${MARGIN.top}" y2="${MARGIN.top + plotH}"/>
-          <circle class="hover-dot" r="3.5" fill="${color}"/>
+          ${drawn.map((s) => `<circle class="hover-dot" r="3" fill="${s.color}"/>`).join('')}
         </g>
         <rect class="hit" x="${MARGIN.left}" y="${MARGIN.top}" width="${plotW}" height="${plotH}" fill="transparent"/>
       </svg>
+      ${single ? '' : `<div class="chart-legend">${drawn.map((s) =>
+        `<span class="legend-item"><span class="legend-swatch" style="background:${s.color}"></span>${s.label}</span>`).join('')}</div>`}
       <div class="chart-tip" hidden></div>`;
 
-    this.attachHover({ x, y, t0, t1, width, plotW });
+    this.attachHover({ x, y, t0, t1, width, plotW, drawn });
   }
 
-  attachHover({ x, y, t0, t1, width, plotW }) {
+  attachHover({ x, y, t0, t1, width, plotW, drawn }) {
     const svg = this.container.querySelector('.chart-svg');
     const hit = this.container.querySelector('.hit');
     const layer = this.container.querySelector('.hover-layer');
     const crosshair = this.container.querySelector('.crosshair');
-    const dot = this.container.querySelector('.hover-dot');
+    const dots = [...this.container.querySelectorAll('.hover-dot')];
     const tip = this.container.querySelector('.chart-tip');
     if (!hit) return;
 
     const move = (event) => {
       const rect = svg.getBoundingClientRect();
-      const px = event.clientX - rect.left;
-      const t = t0 + ((px - MARGIN.left) / plotW) * (t1 - t0);
+      const t = t0 + ((event.clientX - rect.left - MARGIN.left) / plotW) * (t1 - t0);
 
-      let best = null;
-      let bestDist = Infinity;
-      for (const p of this.points) {
-        if (p[1] === null) continue;
-        const d = Math.abs(p[0] - t);
-        if (d < bestDist) { bestDist = d; best = p; }
-      }
-      if (!best) return;
+      // One crosshair, one reading per line: with six windows on the same axes the
+      // question is always "what did each of them say at this instant?".
+      const readings = drawn.map((serie) => {
+        let best = null;
+        let bestDist = Infinity;
+        for (const point of serie.points) {
+          if (point[1] === null) continue;
+          const d = Math.abs(point[0] - t);
+          if (d < bestDist) { bestDist = d; best = point; }
+        }
+        return best ? { serie, point: best } : null;
+      }).filter(Boolean);
+      if (!readings.length) return;
 
-      const bx = x(best[0]);
-      const by = y(best[1]);
+      const anchor = readings[0].point;
+      const bx = x(anchor[0]);
       layer.setAttribute('opacity', '1');
       crosshair.setAttribute('x1', bx);
       crosshair.setAttribute('x2', bx);
-      dot.setAttribute('cx', bx);
-      dot.setAttribute('cy', by);
+      readings.forEach((r, i) => {
+        if (!dots[i]) return;
+        dots[i].setAttribute('cx', x(r.point[0]));
+        dots[i].setAttribute('cy', y(r.point[1]));
+      });
 
-      const duringFault = this.spans.some((s) => best[0] >= s.start && best[0] <= s.end);
+      const duringFault = this.spans.some((s) => anchor[0] >= s.start && anchor[0] <= s.end);
+      const step = Math.abs(anchor[1]) / 100 || 0.01;
       tip.hidden = false;
       tip.innerHTML = `
-        <div class="chart-tip-value">${axisLabel(best[1], this.unit, Math.abs(best[1]) / 100 || 0.01)}</div>
-        <div class="chart-tip-time">${new Date(best[0] * 1000).toLocaleTimeString()}</div>
+        ${readings.map(({ serie, point }) => `
+          <div class="chart-tip-row">
+            ${serie.label ? `<span class="legend-swatch" style="background:${serie.color}"></span>
+                             <span class="chart-tip-label">${serie.label}</span>` : ''}
+            <span class="chart-tip-value">${axisLabel(point[1], this.unit, step)}</span>
+          </div>`).join('')}
+        <div class="chart-tip-time">${new Date(anchor[0] * 1000).toLocaleTimeString()}</div>
         ${duringFault ? '<div class="chart-tip-fault">fault active</div>' : ''}`;
 
       const tipW = tip.offsetWidth;
-      const left = Math.min(Math.max(bx - tipW / 2, 4), width - tipW - 4);
-      tip.style.left = `${left}px`;
-      tip.style.top = `${Math.max(by - 58, 2)}px`;
+      tip.style.left = `${Math.min(Math.max(bx - tipW / 2, 4), width - tipW - 4)}px`;
+      tip.style.top = `${Math.max(y(anchor[1]) - tip.offsetHeight - 10, 2)}px`;
     };
 
     hit.addEventListener('pointermove', move);
@@ -186,6 +240,9 @@ export class Chart {
     });
   }
 }
+
+// A palette for multi-series charts, ordered so neighbouring windows stay apart visually.
+const SERIES_COLORS = ['#5aa9ff', '#3fd17a', '#ecc04b', '#f4645f', '#b58cf0', '#4ecdc4'];
 
 // niceTicks picks round numbers for the axis instead of dividing the range evenly, which
 // is what stops an axis reading 99.3847%.
