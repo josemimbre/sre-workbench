@@ -24,11 +24,10 @@ const VIEWS = [
   {
     id: 'control',
     label: 'Control room',
-    sections: [
-      ['sec-alerts', 'Alerts'],
-      ['sec-history', 'History'],
-      ['sec-controls', 'Controls'],
-    ],
+    // No section anchors: the chart and the controls sit side by side, so a linear list
+    // of them would point at the same place twice. Collapsing the controls into tabs is
+    // what made the view fit on a screen, and a view that fits needs no anchors.
+    sections: [],
   },
 ];
 
@@ -209,7 +208,7 @@ function renderSidebar() {
     });
     // Only the view you are in lists its sections: a menu that shows every anchor of
     // every page is a table of contents, not navigation.
-    if (v.id === state.view) {
+    if (v.id === state.view && v.sections.length) {
       mount(group.querySelector('.nav-sections'), v.sections.map(([id, label]) => clone('tpl-nav-section', {
         '': {
           text: label,
