@@ -2,10 +2,11 @@
 
 A local playground for designing, measuring and **deliberately breaking** SLIs and SLOs.
 
-One service is wired end to end: RED metrics, faults you can inject on demand, SLO
+Two services are wired end to end: RED metrics, faults you can inject on demand, SLO
 recording rules, multi-window burn-rate alerts, and a console that explains and drives
-all of it. Two more services — one for saturation and dependencies, one for a data
-pipeline's freshness and correctness — are not built yet.
+all of it. `checkout-api` depends on `catalog-api`, so a fault in one shows up in the
+other's budget. A third service, for a data pipeline's freshness and correctness, is not
+built yet.
 
 ## Getting started
 
@@ -22,6 +23,7 @@ make down    # stop (use make clean to drop the stored series too)
 | Prometheus | http://localhost:9090 |
 | Alertmanager | http://localhost:9093 |
 | checkout-api | http://localhost:8080/checkout |
+| catalog-api | http://localhost:8081/items/sku-7 |
 
 Grafana allows anonymous access as Admin; `admin` / `admin` if you ever need it.
 
@@ -31,8 +33,9 @@ injected fault is measured against.
 
 ## What is in here
 
-- `services/` — a single Go module. `checkout-api` is the only service so far;
-  `pkg/metrics` holds the RED middleware every service will share.
+- `services/` — a single Go module. `checkout-api` takes the orders and `catalog-api`
+  prices them from Postgres; `pkg/` holds the RED middleware, the fault engine and the
+  dependency client they share.
 - `services/console/` — the control plane: it proxies Prometheus and the services' admin
   APIs from one origin, holds every SLI query, and serves its own UI from inside the Go
   binary. No build step, no node_modules.
@@ -64,6 +67,11 @@ Open the console, read **Overview** to see what is running, then go to the **Con
 room** and run the *Short blip* scenario: 30% of requests fail for two minutes. Watch the
 burn rate climb past 14.4, the page alert fire, and Alertmanager deliver one notification
 instead of two — the ticket for the same budget is inhibited by the page.
+
+Then try the cascade: switch the service picker to `catalog-api` and inject 800ms of
+latency. Nothing is injected into `checkout-api`, but its requests start failing with
+503, because its timeout to the catalogue is 500ms. Two budgets, one fault, and the
+service that broke is not the service you touched.
 
 ## Decisions worth knowing about
 

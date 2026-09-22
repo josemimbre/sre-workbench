@@ -20,6 +20,10 @@ scrape_configs:
     static_configs:
       - targets: ["checkout-api:8080"]
 
+  - job_name: catalog-api
+    static_configs:
+      - targets: ["catalog-api:8081"]
+
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]

@@ -10,8 +10,50 @@ services:
       PORT: "8080"
       VERSION: v1
       BASE_LATENCY_MS: "40"
+      CATALOG_URL: http://catalog-api:8081
+      # How much of the catalogue's bad day this service absorbs before failing.
+      CATALOG_TIMEOUT_MS: "500"
     ports:
       - "8080:8080"
+    depends_on:
+      - catalog-api
+    restart: unless-stopped
+
+  catalog-api:
+    build:
+      context: ../../services
+      args:
+        SERVICE: catalog-api
+    environment:
+      PORT: "8081"
+      VERSION: v1
+      DATABASE_URL: postgres://workbench:workbench@postgres:5432/workbench?sslmode=disable
+      # Small on purpose. This is the knob that turns a healthy service into a queue.
+      DB_MAX_CONNS: "8"
+      CACHE_TTL_MS: "2000"
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: workbench
+      POSTGRES_PASSWORD: workbench
+      POSTGRES_DB: workbench
+    volumes:
+      - ../../deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Postgres 18 wants the volume one level up: it keeps the cluster in a versioned
+      # subdirectory so a future pg_upgrade does not straddle a mount boundary.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workbench -d workbench"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     restart: unless-stopped
 
   console:
@@ -21,7 +63,7 @@ services:
         SERVICE: console
     environment:
       PORT: "8090"
-      SERVICES: checkout-api=http://checkout-api:8080
+      SERVICES: checkout-api=http://checkout-api:8080,catalog-api=http://catalog-api:8081
       PROMETHEUS_URL: http://prometheus:9090
       # The links in the header are opened by your browser, not by the container, so
       # they have to be the published ports rather than the compose network names.
@@ -106,6 +148,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres-data:
   prometheus-data:
   alertmanager-data:
   grafana-data:

@@ -1,6 +1,10 @@
 // checkout-api is the entry point of the workbench: a write endpoint whose SLIs are
-// availability and latency. It has no dependencies yet; what it does have is a fault
-// engine, so the SLIs can be broken on demand and watched.
+// availability and latency.
+//
+// It validates each order against catalog-api, which makes it the upstream half of a
+// dependency. Nothing has to be injected here to break it: slow the catalogue down and
+// this service's latency SLO goes with it, squeeze the catalogue's connection pool and
+// these requests start failing. That propagation is the point.
 package main
 
 import (
@@ -21,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/josemimbre/sre-workbench/services/pkg/faults"
+	"github.com/josemimbre/sre-workbench/services/pkg/httpx"
 	"github.com/josemimbre/sre-workbench/services/pkg/metrics"
 )
 
@@ -33,7 +38,14 @@ func main() {
 
 	m := metrics.New(serviceName, version)
 	engine := faults.New(prometheus.DefaultRegisterer)
-	api := &api{log: log, baseLatency: baseLatency}
+
+	// The timeout is a policy, not a detail: it decides how much of the catalogue's bad
+	// day this service is willing to absorb before turning it into its own failure.
+	catalog := httpx.New(prometheus.DefaultRegisterer, "catalog-api",
+		env("CATALOG_URL", "http://catalog-api:8081"),
+		time.Duration(envInt("CATALOG_TIMEOUT_MS", 500))*time.Millisecond)
+
+	api := &api{log: log, baseLatency: baseLatency, catalog: catalog}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /checkout", api.checkout)
@@ -82,6 +94,7 @@ func main() {
 type api struct {
 	log         *slog.Logger
 	baseLatency time.Duration
+	catalog     *httpx.Client
 }
 
 type checkoutRequest struct {
@@ -90,9 +103,16 @@ type checkoutRequest struct {
 }
 
 type checkoutResponse struct {
-	OrderID string `json:"order_id"`
-	ItemID  string `json:"item_id"`
-	Qty     int    `json:"qty"`
+	OrderID    string `json:"order_id"`
+	ItemID     string `json:"item_id"`
+	Qty        int    `json:"qty"`
+	TotalCents int    `json:"total_cents"`
+}
+
+type catalogItem struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	PriceCents int    `json:"price_cents"`
 }
 
 func (a *api) checkout(w http.ResponseWriter, r *http.Request) {
@@ -108,12 +128,31 @@ func (a *api) checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var found catalogItem
+	err := a.catalog.Get(r.Context(), "/items/"+req.ItemID, &found)
+	switch {
+	case errors.Is(err, httpx.ErrNotFound):
+		// The catalogue answered, and the answer is that the item does not exist. That
+		// is the user's mistake, so it stays a 4xx and never touches the error budget.
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown item"})
+		return
+	case err != nil:
+		// Any other failure of the dependency becomes a failure of this service. That is
+		// a decision, not a law: checkout could accept the order and price it later, and
+		// the SLI would then stay clean through a catalogue outage. Failing closed is the
+		// honest default, and it is what makes the cascade visible.
+		a.log.Error("catalog lookup failed", "item", req.ItemID, "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "cannot price the order"})
+		return
+	}
+
 	a.work()
 
 	writeJSON(w, http.StatusOK, checkoutResponse{
-		OrderID: strconv.FormatUint(rand.Uint64(), 36),
-		ItemID:  req.ItemID,
-		Qty:     req.Qty,
+		OrderID:    strconv.FormatUint(rand.Uint64(), 36),
+		ItemID:     req.ItemID,
+		Qty:        req.Qty,
+		TotalCents: found.PriceCents * req.Qty,
 	})
 }
 

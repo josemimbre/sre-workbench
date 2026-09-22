@@ -1,0 +1,65 @@
+# SLO definitions for catalog-api.
+#
+# The targets are tighter than checkout-api's on purpose. A dependency's failures do not
+# stay with the dependency: every one of them becomes a failure of whoever was waiting,
+# so a service that several others block on has to be more reliable than any of them.
+# With checkout-api at 99% and nothing else in the way, a catalogue at 99% would mean
+# checkout could never reach its own target even if its own code were perfect.
+version: prometheus/v1
+service: catalog-api
+labels:
+  workbench: playground
+
+slos:
+  # Bad events are 5xx only. A 404 is a correct answer about an item that does not
+  # exist, and a 499 means the caller hung up before we replied — neither is a failure
+  # of this service, and counting them would spend its budget on other people's
+  # mistakes and other people's impatience.
+  - name: availability
+    objective: 99.5
+    description: >-
+      The proportion of catalogue lookups that do not fail with a server error,
+      over a rolling one-hour window.
+    sli:
+      events:
+        error_query: (sum(rate(http_requests_total{job="catalog-api", code=~"5.."}[{{.window}}])) or vector(0))
+        total_query: sum(rate(http_requests_total{job="catalog-api"}[{{.window}}]))
+    alerting:
+      name: CatalogAPIAvailability
+      labels:
+        sli: availability
+      annotations:
+        summary: catalog-api is burning its availability budget
+      page_alert:
+        labels:
+          severity: page
+      ticket_alert:
+        labels:
+          severity: ticket
+
+  # 100ms rather than checkout's 300ms, for the same reason: this service's latency is
+  # spent out of its caller's budget, so it gets a smaller share of the whole.
+  - name: latency
+    objective: 95.0
+    description: >-
+      The proportion of catalogue lookups served in under 100ms, over a rolling
+      one-hour window.
+    sli:
+      events:
+        error_query: >-
+          sum(rate(http_request_duration_seconds_count{job="catalog-api"}[{{.window}}]))
+          -
+          sum(rate(http_request_duration_seconds_bucket{job="catalog-api", le="0.1"}[{{.window}}]))
+        total_query: sum(rate(http_request_duration_seconds_count{job="catalog-api"}[{{.window}}]))
+    alerting:
+      name: CatalogAPILatency
+      labels:
+        sli: latency
+      annotations:
+        summary: catalog-api is burning its latency budget
+      page_alert:
+        labels:
+          severity: page
+      ticket_alert:
+        labels:
+          severity: ticket
