@@ -1,6 +1,7 @@
 // Client-side view of the SLI. Everything this script measures is what the user would
-// experience; everything /metrics measures is what the server believes happened. Phase 0
-// keeps both flat so any later divergence is obviously caused by an injected fault.
+// experience; everything /metrics measures is what the server believes happened. Both are
+// deliberately flat at rest, so any divergence between them is caused by an injected
+// fault rather than by the generator.
 import http from 'k6/http';
 import { check } from 'k6';
 

@@ -2,8 +2,10 @@
 
 A local playground for designing, measuring and **deliberately breaking** SLIs and SLOs.
 
-Status: **phases 0–3 on one service** — RED metrics, deliberate faults, SLO recording
-rules, multi-window burn-rate alerts, and a console that explains and drives all of it.
+One service is wired end to end: RED metrics, faults you can inject on demand, SLO
+recording rules, multi-window burn-rate alerts, and a console that explains and drives
+all of it. Two more services — one for saturation and dependencies, one for a data
+pipeline's freshness and correctness — are not built yet.
 
 ## Getting started
 
@@ -24,8 +26,8 @@ make down    # stop (use make clean to drop the stored series too)
 Grafana allows anonymous access as Admin; `admin` / `admin` if you ever need it.
 
 A minute after `make up` you should see roughly 20 req/s, about 2% of 400s (invalid
-requests the load generator sends on purpose) and **zero** 5xx. That is the baseline the
-injected faults of phase 1 will be measured against.
+requests the load generator sends on purpose) and **zero** 5xx. That is the baseline every
+injected fault is measured against.
 
 ## What is in here
 
@@ -40,7 +42,9 @@ injected faults of phase 1 will be measured against.
 - `observability/` — Prometheus, Alertmanager and Grafana configuration.
 - `loadgen/` — the k6 script. It ships its metrics to Prometheus over remote write, so
   the SLI can be compared *server-side* against *client-side*.
-- `scenarios/` — empty until phase 3 (game days).
+
+Scenarios — the scripted game days — are defined in the console's catalog and run from
+its UI, not from files on disk.
 
 ## Useful commands
 

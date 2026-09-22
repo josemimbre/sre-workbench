@@ -355,7 +355,7 @@ func buildCatalog() catalog {
 				Body: []string{
 					"Burn rate is how many times faster than sustainable you are spending the budget. A burn rate of 1 uses exactly the whole budget by the end of the window; a burn rate of 14.4 uses 2% of a 30-day budget in an hour.",
 					"That is why alerting on burn rate beats alerting on a raw error rate: it takes both severity and duration into account, so a two-minute blip and a two-day drizzle can both page you when they deserve it.",
-					"Phase 3 of the plan turns this into the four multi-window alerts from the SRE Workbook.",
+					"The four alerts on this page are exactly that idea: two burn rates that page, two that open a ticket, each needing a long window and a short one to agree before it fires.",
 				},
 			},
 			{
